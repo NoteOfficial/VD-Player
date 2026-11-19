@@ -1,0 +1,125 @@
+name: Build VD Player APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Test, Build & Sign APK (v1 + v2 + v3)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Prepare debug keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkeypair -v -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Run unit & Robolectric tests
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Build and sign APK (v1, v2, v3)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+
+          mkdir -p dist build_tmp
+
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "Building release APK with configured upload keystore..."
+            echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+            KEYSTORE_PATH="$(pwd)/my-upload-key.jks" gradle :app:assembleRelease --no-daemon
+            "$ZIPALIGN" -p -f 4 app/build/outputs/apk/release/app-release.apk build_tmp/aligned.apk
+            "$APKSIGNER" sign \
+              --ks my-upload-key.jks \
+              --ks-pass "pass:$STORE_PASSWORD" \
+              --ks-key-alias upload \
+              --key-pass "pass:$KEY_PASSWORD" \
+              --min-sdk-version 21 \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out dist/VD-Player-v1.0.0.apk \
+              build_tmp/aligned.apk
+            rm -f my-upload-key.jks
+          else
+            echo "Building signed APK (debug keystore, v1 + v2 + v3 signatures)..."
+            gradle :app:assembleDebug --no-daemon
+            "$ZIPALIGN" -p -f 4 app/build/outputs/apk/debug/app-debug.apk build_tmp/aligned.apk
+            "$APKSIGNER" sign \
+              --ks debug.keystore \
+              --ks-pass pass:android \
+              --ks-key-alias androiddebugkey \
+              --key-pass pass:android \
+              --min-sdk-version 21 \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out dist/VD-Player-v1.0.0.apk \
+              build_tmp/aligned.apk
+          fi
+
+          rm -rf build_tmp dist/*.idsig
+          echo "=== Verifying APK Signature Schemes (v1, v2, v3) ==="
+          VERIFY_V1=$("$APKSIGNER" verify --min-sdk-version 21 --max-sdk-version 23 --verbose dist/VD-Player-v1.0.0.apk)
+          echo "$VERIFY_V1"
+          echo "$VERIFY_V1" | grep -q "Verified using v1 scheme (JAR signing): true"
+
+          VERIFY_V23=$("$APKSIGNER" verify --verbose --print-certs dist/VD-Player-v1.0.0.apk)
+          echo "$VERIFY_V23"
+          echo "$VERIFY_V23" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
+          echo "$VERIFY_V23" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
+          ls -lh dist/VD-Player-v1.0.0.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VD-Player-v1.0.0-APK
+          path: dist/VD-Player-v1.0.0.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/VD-Player-v1.0.0.apk
+          generate_release_notes: true

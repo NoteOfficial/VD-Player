@@ -1,0 +1,6 @@
+{
+  "name": "VD Player",
+  "description": "All-in-one Android media downloader, private gallery, Media3 video & music player, mini browser, AES-256 vault, file manager, and media studio by Mr TK.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

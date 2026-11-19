@@ -1,0 +1,972 @@
+package com.tkofficial.videodownloder.ui.player
+
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.Player
+import coil.compose.AsyncImage
+import com.example.R
+import com.tkofficial.videodownloder.core.LocaleHelper
+import com.tkofficial.videodownloder.core.openAppDetailsSettings
+import com.tkofficial.videodownloder.models.DeviceMediaItem
+import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
+import com.tkofficial.videodownloder.utilities.FormatUtils
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.sin
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PlayerScreen(
+    viewModel: PlayerViewModel,
+    onOpenVideoPlayer: (uri: String, title: String) -> Unit
+) {
+    val context = LocalContext.current
+    val tokens = LocalVaTokens.current
+
+    val mainSection by viewModel.mainSection.collectAsStateWithLifecycle()
+    val videoTab by viewModel.videoTab.collectAsStateWithLifecycle()
+    val musicTab by viewModel.musicTab.collectAsStateWithLifecycle()
+    val videos by viewModel.videos.collectAsStateWithLifecycle()
+    val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val playbackUi by viewModel.playbackUi.collectAsStateWithLifecycle()
+    val musicQueue by viewModel.musicQueue.collectAsStateWithLifecycle()
+    val eqState by viewModel.eqState.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val audioPermission = remember { LocaleHelper.audioReadPermissionName() }
+
+    var hasAudioPerm by remember {
+        mutableStateOf(LocaleHelper.hasAudioPermission(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasAudioPerm = LocaleHelper.hasAudioPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(hasAudioPerm) {
+        viewModel.setAudioPermissionGranted(hasAudioPerm)
+    }
+
+    val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasAudioPerm = granted
+    }
+
+    val videoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(20)
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.addPickedVideos(uris)
+    }
+
+    val videoFolderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.addPersistedVideoFolder(treeUri)
+        }
+    }
+
+    val audioFilePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { u ->
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            viewModel.addPickedAudio(uris)
+        }
+    }
+
+    var lyricsLines by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showLyricsDialog by remember { mutableStateOf(false) }
+    val lrcPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val text = context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            lyricsLines = text.lines().map { it.replace(Regex("""\[\d{2}:\d{2}(?:\.\d{1,3})?]"""), "").trim() }.filter { it.isNotBlank() }
+            showLyricsDialog = true
+        }
+    }
+
+    var showFullMusicSheet by remember { mutableStateOf(false) }
+    var showEqDialog by remember { mutableStateOf(false) }
+    var showSleepDialog by remember { mutableStateOf(false) }
+    var showQueueDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var addToPlaylistItem by remember { mutableStateOf<DeviceMediaItem?>(null) }
+    var editMetadataItem by remember { mutableStateOf<DeviceMediaItem?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(tokens.background)
+    ) {
+        // Main Top Section Switcher: VIDEO PLAYER | MUSIC PLAYER
+        TabRow(
+            selectedTabIndex = mainSection.ordinal,
+            containerColor = tokens.cardSurface,
+            contentColor = tokens.primaryAccent
+        ) {
+            Tab(
+                selected = mainSection == PlayerMainSection.VIDEO,
+                onClick = { viewModel.selectMainSection(PlayerMainSection.VIDEO) },
+                text = { Text(stringResource(R.string.player_video_tab)) },
+                icon = { Icon(Icons.Rounded.VideoLibrary, contentDescription = null) },
+                modifier = Modifier.testTag("player_video_tab")
+            )
+            Tab(
+                selected = mainSection == PlayerMainSection.MUSIC,
+                onClick = { viewModel.selectMainSection(PlayerMainSection.MUSIC) },
+                text = { Text(stringResource(R.string.player_music_tab)) },
+                icon = { Icon(Icons.Rounded.MusicNote, contentDescription = null) },
+                modifier = Modifier.testTag("player_music_tab")
+            )
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            if (mainSection == PlayerMainSection.VIDEO) {
+                VideoLibraryPane(
+                    videos = videos,
+                    selectedTab = videoTab,
+                    playlists = playlists.filter { it.mediaCategory == "VIDEO" },
+                    onSelectTab = viewModel::selectVideoTab,
+                    onPickVideos = {
+                        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                    },
+                    onPickVideoFolder = { videoFolderPicker.launch(null) },
+                    onPlayVideo = { item -> onOpenVideoPlayer(item.uriString, item.title) },
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onAddToPlaylist = { addToPlaylistItem = it },
+                    onCreatePlaylist = { showCreatePlaylistDialog = true }
+                )
+            } else {
+                MusicLibraryPane(
+                    songs = songs,
+                    selectedTab = musicTab,
+                    hasAudioPerm = hasAudioPerm,
+                    playlists = playlists.filter { it.mediaCategory == "AUDIO" },
+                    currentPlayingUri = playbackUi.currentUri,
+                    onRequestAudioPerm = { audioPermLauncher.launch(audioPermission) },
+                    onOpenAppSettings = { context.openAppDetailsSettings() },
+                    onPickAudioFiles = { audioFilePicker.launch(arrayOf("audio/*")) },
+                    onSelectTab = viewModel::selectMusicTab,
+                    onPlaySongList = { list, index -> viewModel.playMusicQueue(list, index) },
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onAddToPlaylist = { addToPlaylistItem = it },
+                    onEditMetadata = { editMetadataItem = it },
+                    onCreatePlaylist = { showCreatePlaylistDialog = true }
+                )
+            }
+        }
+
+        // Persistent Mini Music Player Bar when audio session is active
+        AnimatedVisibility(visible = playbackUi.currentTitle.isNotBlank()) {
+            VaCard(
+                onClick = { showFullMusicSheet = true },
+                highlighted = true,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("mini_player_bar")
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(tokens.elevatedSurface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(playbackUi.currentTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                playbackUi.currentArtist.ifBlank { stringResource(R.string.app_name) },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                        IconButton(onClick = viewModel::skipPrevious) {
+                            Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev))
+                        }
+                        IconButton(onClick = viewModel::togglePlayPause) {
+                            Icon(
+                                if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = stringResource(R.string.player_play_pause),
+                                tint = tokens.primaryAccent
+                            )
+                        }
+                        IconButton(onClick = viewModel::skipNext) {
+                            Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
+                        }
+                    }
+                    if (playbackUi.durationMs > 0L) {
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { (playbackUi.positionMs.toFloat() / playbackUi.durationMs.toFloat()).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
+                            color = tokens.primaryAccent
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Full Music Player Bottom Sheet with Visualizer, Equalizer, Sleep Timer, Queue, Lyrics
+    if (showFullMusicSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFullMusicSheet = false },
+            containerColor = tokens.cardSurface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(tokens.heroGradient),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Album, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(80.dp))
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Text(playbackUi.currentTitle, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(playbackUi.currentArtist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                if (settings.musicVisualizerEnabled) {
+                    Spacer(Modifier.height(12.dp))
+                    MusicVisualizerCanvas(isPlaying = playbackUi.isPlaying, modifier = Modifier.fillMaxWidth().height(36.dp))
+                }
+
+                Spacer(Modifier.height(10.dp))
+                val dur = playbackUi.durationMs.coerceAtLeast(1L)
+                Slider(
+                    value = (playbackUi.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f),
+                    onValueChange = { frac -> viewModel.seekTo((frac * dur).toLong()) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(FormatUtils.formatDuration(playbackUi.positionMs), style = MaterialTheme.typography.labelSmall)
+                    Text(FormatUtils.formatDuration(playbackUi.durationMs), style = MaterialTheme.typography.labelSmall)
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = viewModel::toggleShuffle) {
+                        Icon(
+                            Icons.Rounded.Shuffle,
+                            contentDescription = stringResource(R.string.player_shuffle),
+                            tint = if (playbackUi.shuffleEnabled) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = viewModel::skipPrevious) {
+                        Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev), modifier = Modifier.size(34.dp))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(62.dp)
+                            .clip(CircleShape)
+                            .background(tokens.heroGradient)
+                            .clickable(onClick = viewModel::togglePlayPause),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.player_play_pause),
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                    IconButton(onClick = viewModel::skipNext) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next), modifier = Modifier.size(34.dp))
+                    }
+                    IconButton(onClick = viewModel::cycleRepeatMode) {
+                        val repIcon = if (playbackUi.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
+                        val active = playbackUi.repeatMode != Player.REPEAT_MODE_OFF
+                        Icon(repIcon, contentDescription = stringResource(R.string.player_repeat), tint = if (active) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { showEqDialog = true }) {
+                        Icon(Icons.Rounded.Equalizer, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.player_equalizer))
+                    }
+                    OutlinedButton(onClick = { showSleepDialog = true }) {
+                        Icon(Icons.Rounded.Bedtime, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        val stText = if (playbackUi.sleepTimerRemainingSec > 0) stringResource(R.string.mins_short, playbackUi.sleepTimerRemainingSec / 60) else stringResource(R.string.player_sleep_timer)
+                        Text(stText)
+                    }
+                    OutlinedButton(onClick = { showQueueDialog = true }) {
+                        Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.player_queue_count, musicQueue.size))
+                    }
+                    OutlinedButton(onClick = { lrcPicker.launch(arrayOf("text/*", "application/octet-stream")) }) {
+                        Icon(Icons.Rounded.Lyrics, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.player_lyrics_btn))
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    // Equalizer & Audio Effects Dialog
+    if (showEqDialog) {
+        AlertDialog(
+            onDismissRequest = { showEqDialog = false },
+            title = { Text(stringResource(R.string.player_equalizer)) },
+            text = {
+                if (!eqState.isSupported) {
+                    Text(stringResource(R.string.player_eq_unsupported))
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.player_eq_enable))
+                            Switch(checked = eqState.enabled, onCheckedChange = viewModel::setEqEnabled)
+                        }
+                        if (eqState.presets.isNotEmpty()) {
+                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                eqState.presets.forEachIndexed { idx, name ->
+                                    FilterChip(
+                                        selected = eqState.currentPresetIndex == idx,
+                                        onClick = { viewModel.useEqPreset(idx) },
+                                        label = { Text(name) }
+                                    )
+                                }
+                            }
+                        }
+                        eqState.bandLevels.forEachIndexed { idx, level ->
+                            val hz = eqState.bandCenterFreqsHz.getOrElse(idx) { 0 }
+                            Text("${hz} Hz (${level / 100} dB)", style = MaterialTheme.typography.labelSmall)
+                            Slider(
+                                value = level.toFloat(),
+                                valueRange = eqState.minBandLevel.toFloat()..eqState.maxBandLevel.toFloat(),
+                                onValueChange = { viewModel.setEqBand(idx, it.toInt().toShort()) }
+                            )
+                        }
+                        if (eqState.bassBoostSupported) {
+                            Text(stringResource(R.string.player_bass_boost, eqState.bassBoostStrength / 10), style = MaterialTheme.typography.labelSmall)
+                            Slider(
+                                value = eqState.bassBoostStrength.toFloat(),
+                                valueRange = 0f..1000f,
+                                onValueChange = { viewModel.setBassBoost(it.toInt().toShort()) }
+                            )
+                        }
+                        if (eqState.virtualizerSupported) {
+                            Text(stringResource(R.string.player_virtualizer, eqState.virtualizerStrength / 10), style = MaterialTheme.typography.labelSmall)
+                            Slider(
+                                value = eqState.virtualizerStrength.toFloat(),
+                                valueRange = 0f..1000f,
+                                onValueChange = { viewModel.setVirtualizer(it.toInt().toShort()) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showEqDialog = false }) { Text(stringResource(R.string.btn_close)) }
+            }
+        )
+    }
+
+    // Sleep Timer Dialog
+    if (showSleepDialog) {
+        AlertDialog(
+            onDismissRequest = { showSleepDialog = false },
+            title = { Text(stringResource(R.string.player_sleep_timer)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 10, 20, 30, 60).forEach { mins ->
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.startSleepTimer(mins)
+                                showSleepDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                if (mins == 0) stringResource(R.string.player_sleep_off)
+                                else stringResource(R.string.player_sleep_in_mins, mins)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Queue Dialog
+    if (showQueueDialog) {
+        AlertDialog(
+            onDismissRequest = { showQueueDialog = false },
+            title = { Text(stringResource(R.string.player_playback_queue_title, musicQueue.size)) },
+            text = {
+                LazyColumn(modifier = Modifier.height(260.dp)) {
+                    itemsIndexed(musicQueue) { idx, track ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.playMusicQueue(musicQueue, idx)
+                                    showQueueDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${idx + 1}. ${track.title}", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            if (track.uriString == playbackUi.currentUri) {
+                                VaStatusChip(stringResource(R.string.player_playing_chip), tokens.primaryAccent)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showQueueDialog = false }) { Text(stringResource(R.string.btn_close)) }
+            }
+        )
+    }
+
+    if (showLyricsDialog) {
+        AlertDialog(
+            onDismissRequest = { showLyricsDialog = false },
+            title = { Text(stringResource(R.string.player_lyrics_title)) },
+            text = {
+                LazyColumn(modifier = Modifier.height(300.dp)) {
+                    items(lyricsLines) { line ->
+                        Text(line, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 4.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showLyricsDialog = false }) { Text(stringResource(R.string.btn_close)) }
+            }
+        )
+    }
+
+    // Create Playlist Dialog
+    if (showCreatePlaylistDialog) {
+        var plName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylistDialog = false },
+            title = { Text(stringResource(R.string.player_new_playlist)) },
+            text = { OutlinedTextField(value = plName, onValueChange = { plName = it }, placeholder = { Text(stringResource(R.string.player_playlist_name_hint)) }, singleLine = true) },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.createPlaylist(plName, if (mainSection == PlayerMainSection.VIDEO) "VIDEO" else "AUDIO")
+                    showCreatePlaylistDialog = false
+                }) { Text(stringResource(R.string.btn_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreatePlaylistDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+
+    // Add to Playlist Dialog
+    addToPlaylistItem?.let { item ->
+        val cat = if (item.isVideo) "VIDEO" else "AUDIO"
+        val matchingPlaylists = playlists.filter { it.mediaCategory == cat }
+        AlertDialog(
+            onDismissRequest = { addToPlaylistItem = null },
+            title = { Text(stringResource(R.string.player_add_to_playlist)) },
+            text = {
+                Column {
+                    if (matchingPlaylists.isEmpty()) {
+                        Text(stringResource(R.string.player_no_playlists_yet))
+                    } else {
+                        matchingPlaylists.forEach { pl ->
+                            TextButton(
+                                onClick = {
+                                    viewModel.addItemToPlaylist(pl.id, item)
+                                    addToPlaylistItem = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(pl.name)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { addToPlaylistItem = null }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+
+    // Song Metadata Editor Dialog
+    editMetadataItem?.let { item ->
+        var title by remember(item.id) { mutableStateOf(item.title) }
+        var artist by remember(item.id) { mutableStateOf(item.artist) }
+        var album by remember(item.id) { mutableStateOf(item.album) }
+        AlertDialog(
+            onDismissRequest = { editMetadataItem = null },
+            title = { Text(stringResource(R.string.player_edit_metadata)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text(stringResource(R.string.player_field_title)) }, singleLine = true)
+                    OutlinedTextField(value = artist, onValueChange = { artist = it }, label = { Text(stringResource(R.string.player_field_artist)) }, singleLine = true)
+                    OutlinedTextField(value = album, onValueChange = { album = it }, label = { Text(stringResource(R.string.player_field_album)) }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.saveSongMetadataOverride(item.uriString, title, artist, album)
+                    editMetadataItem = null
+                }) { Text(stringResource(R.string.btn_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editMetadataItem = null }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun VideoLibraryPane(
+    videos: List<DeviceMediaItem>,
+    selectedTab: VideoSubTab,
+    playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
+    onSelectTab: (VideoSubTab) -> Unit,
+    onPickVideos: () -> Unit,
+    onPickVideoFolder: () -> Unit,
+    onPlayVideo: (DeviceMediaItem) -> Unit,
+    onToggleFavorite: (DeviceMediaItem) -> Unit,
+    onAddToPlaylist: (DeviceMediaItem) -> Unit,
+    onCreatePlaylist: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val filtered = remember(videos, selectedTab) {
+        when (selectedTab) {
+            VideoSubTab.ALL -> videos
+            VideoSubTab.FOLDERS -> videos.sortedBy { it.folderName }
+            VideoSubTab.RECENT -> videos.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
+            VideoSubTab.FAVORITES -> videos.filter { it.isFavorite }
+            VideoSubTab.DOWNLOADED -> videos.filter { it.isDownloadedByApp }
+            VideoSubTab.CONTINUE -> videos.filter { it.lastPositionMs > 1000L }
+            VideoSubTab.PLAYLISTS -> videos
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(onClick = onPickVideos, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.player_import_videos), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onPickVideoFolder, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Rounded.FolderOpen, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.player_add_folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                VideoSubTab.ALL to stringResource(R.string.player_all_videos),
+                VideoSubTab.FOLDERS to stringResource(R.string.player_folders),
+                VideoSubTab.CONTINUE to stringResource(R.string.player_continue),
+                VideoSubTab.RECENT to stringResource(R.string.player_recent),
+                VideoSubTab.FAVORITES to stringResource(R.string.player_favorites),
+                VideoSubTab.DOWNLOADED to stringResource(R.string.player_downloaded),
+                VideoSubTab.PLAYLISTS to stringResource(R.string.player_playlists)
+            ).forEach { (tab, label) ->
+                FilterChip(selected = selectedTab == tab, onClick = { onSelectTab(tab) }, label = { Text(label) })
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        if (selectedTab == VideoSubTab.PLAYLISTS) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.player_video_playlists, playlists.size), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onCreatePlaylist) {
+                    Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.player_new))
+                }
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(playlists, key = { it.id }) { pl ->
+                    VaCard { Text(pl.name, style = MaterialTheme.typography.titleMedium) }
+                }
+            }
+        } else if (filtered.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.player_no_videos_found),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(filtered, key = { it.id }) { item ->
+                    VaCard(onClick = { onPlayVideo(item) }, contentPadding = PaddingValues(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = Uri.parse(item.uriString),
+                                contentDescription = item.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val res = if (item.width > 0 && item.height > 0) "${item.width}×${item.height} • " else ""
+                                Text(
+                                    "$res${FormatUtils.formatDuration(item.durationMs)} • ${FormatUtils.formatBytes(item.sizeBytes)} • ${item.folderName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { onToggleFavorite(item) }) {
+                                Icon(
+                                    if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = stringResource(R.string.gallery_favorite),
+                                    tint = if (item.isFavorite) tokens.danger else tokens.iconTint
+                                )
+                            }
+                            IconButton(onClick = { onAddToPlaylist(item) }) {
+                                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicLibraryPane(
+    songs: List<DeviceMediaItem>,
+    selectedTab: MusicSubTab,
+    hasAudioPerm: Boolean,
+    playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
+    currentPlayingUri: String,
+    onRequestAudioPerm: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onPickAudioFiles: () -> Unit,
+    onSelectTab: (MusicSubTab) -> Unit,
+    onPlaySongList: (List<DeviceMediaItem>, Int) -> Unit,
+    onToggleFavorite: (DeviceMediaItem) -> Unit,
+    onAddToPlaylist: (DeviceMediaItem) -> Unit,
+    onEditMetadata: (DeviceMediaItem) -> Unit,
+    onCreatePlaylist: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val filtered = remember(songs, selectedTab) {
+        when (selectedTab) {
+            MusicSubTab.ALL_SONGS -> songs
+            MusicSubTab.ALBUMS -> songs.sortedBy { it.album }
+            MusicSubTab.ARTISTS -> songs.sortedBy { it.artist }
+            MusicSubTab.FOLDERS -> songs.sortedBy { it.folderName }
+            MusicSubTab.FAVORITES -> songs.filter { it.isFavorite }
+            MusicSubTab.RECENT -> songs.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
+            MusicSubTab.MOST_PLAYED -> songs.filter { it.playCount > 0 }.sortedByDescending { it.playCount }
+            MusicSubTab.RECENTLY_ADDED -> songs.sortedByDescending { it.dateAddedSec }
+            MusicSubTab.PLAYLISTS -> songs
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        if (!hasAudioPerm) {
+            VaCard(highlighted = true, contentPadding = PaddingValues(12.dp)) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.player_scan_music_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.player_scan_music_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        Button(onClick = onRequestAudioPerm) { Text(stringResource(R.string.player_scan_btn)) }
+                        OutlinedButton(onClick = onPickAudioFiles) { Text(stringResource(R.string.player_pick_btn)) }
+                        OutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        } else {
+            OutlinedButton(onClick = onPickAudioFiles, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.AudioFile, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.player_import_audio))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                MusicSubTab.ALL_SONGS to stringResource(R.string.player_all_songs),
+                MusicSubTab.ALBUMS to stringResource(R.string.player_albums),
+                MusicSubTab.ARTISTS to stringResource(R.string.player_artists),
+                MusicSubTab.FOLDERS to stringResource(R.string.player_folders),
+                MusicSubTab.PLAYLISTS to stringResource(R.string.player_playlists),
+                MusicSubTab.FAVORITES to stringResource(R.string.player_favorites),
+                MusicSubTab.RECENT to stringResource(R.string.player_recent),
+                MusicSubTab.MOST_PLAYED to stringResource(R.string.player_most_played),
+                MusicSubTab.RECENTLY_ADDED to stringResource(R.string.player_recently_added)
+            ).forEach { (tab, label) ->
+                FilterChip(selected = selectedTab == tab, onClick = { onSelectTab(tab) }, label = { Text(label) })
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        if (selectedTab == MusicSubTab.PLAYLISTS) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.player_audio_playlists), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onCreatePlaylist) {
+                    Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.player_new))
+                }
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    VaCard(onClick = { onPlaySongList(songs.sortedByDescending { it.playCount }.take(25), 0) }) {
+                        Text(stringResource(R.string.player_smart_most_played, songs.count { it.playCount > 0 }), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                item {
+                    VaCard(onClick = { onPlaySongList(songs.filter { it.isFavorite }, 0) }) {
+                        Text(stringResource(R.string.player_smart_favorites, songs.count { it.isFavorite }), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                items(playlists, key = { it.id }) { pl ->
+                    VaCard { Text(pl.name, style = MaterialTheme.typography.titleMedium) }
+                }
+            }
+        } else if (filtered.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.player_no_songs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(filtered, key = { _, item -> item.id }) { index, song ->
+                    val isPlayingThis = song.uriString == currentPlayingUri
+                    VaCard(
+                        onClick = { onPlaySongList(filtered, index) },
+                        highlighted = isPlayingThis,
+                        contentPadding = PaddingValues(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = song.albumArtUri?.let { Uri.parse(it) },
+                                contentDescription = song.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(song.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${song.artist} • ${song.album} • ${FormatUtils.formatDuration(song.durationMs)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { onToggleFavorite(song) }) {
+                                Icon(
+                                    if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = stringResource(R.string.gallery_favorite),
+                                    tint = if (song.isFavorite) tokens.danger else tokens.iconTint
+                                )
+                            }
+                            IconButton(onClick = { onEditMetadata(song) }) {
+                                Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
+                            }
+                            IconButton(onClick = { onAddToPlaylist(song) }) {
+                                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicVisualizerCanvas(isPlaying: Boolean, modifier: Modifier = Modifier) {
+    val tokens = LocalVaTokens.current
+    var phase by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            delay(50L)
+            phase += 0.25f
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        val bars = 24
+        val barWidth = size.width / (bars * 1.6f)
+        val gap = (size.width - bars * barWidth) / (bars - 1).coerceAtLeast(1)
+        for (i in 0 until bars) {
+            val amp = if (isPlaying) {
+                (0.25f + 0.75f * abs(sin(phase + i * 0.45f))).coerceIn(0.15f, 1f)
+            } else {
+                0.15f
+            }
+            val barH = size.height * amp
+            val x = i * (barWidth + gap)
+            drawRoundRect(
+                color = if (i % 2 == 0) tokens.primaryAccent else tokens.tertiaryAccent,
+                topLeft = Offset(x, size.height - barH),
+                size = Size(barWidth, barH),
+                cornerRadius = CornerRadius(4f, 4f)
+            )
+        }
+    }
+}
