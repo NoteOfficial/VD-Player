@@ -31,34 +31,98 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK 36.1 & accept licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK_ROOT"
+
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT"/cmdline-tools/*/bin/sdkmanager \
+            "$(command -v sdkmanager 2>/dev/null || true)"; do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Downloading Android command-line tools..."
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip
+            mkdir -p /tmp/cmdline-extract "$SDK_ROOT/cmdline-tools"
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-extract
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv /tmp/cmdline-extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-extract
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          mkdir -p "$SDK_ROOT/licenses"
+          grep -q "24333f8a63b6825ea9c5514f83c2829b004d1fee" "$SDK_ROOT/licenses/android-sdk-license" 2>/dev/null || \
+            printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" >> "$SDK_ROOT/licenses/android-sdk-license"
+          grep -q "84831b9409646a918e30573bab4c9c91346d8abd" "$SDK_ROOT/licenses/android-sdk-preview-license" 2>/dev/null || \
+            printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" >> "$SDK_ROOT/licenses/android-sdk-preview-license"
+
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "build-tools;36.0.0" \
+            "platforms;android-36" \
+            "platforms;android-36.1"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
+        continue-on-error: true
         with:
           gradle-version: "9.3.1"
 
-      - name: Prepare debug keystore
+      - name: Prepare Gradle, environment & signing keystore
+        shell: bash
         run: |
+          set -euo pipefail
+          if ! command -v gradle >/dev/null 2>&1; then
+            curl -fsSL https://services.gradle.org/distributions/gradle-9.3.1-bin.zip -o /tmp/gradle.zip
+            sudo unzip -q /tmp/gradle.zip -d /opt
+            rm -f /tmp/gradle.zip
+            echo "/opt/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+          fi
+
+          [ -f .env.example ] || printf '# placeholder\n' > .env.example
+
           if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            tr -d '\r\n' < debug.keystore.base64 | base64 -d > debug.keystore
           else
             keytool -genkeypair -v -keystore debug.keystore -storepass android \
               -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+          keytool -list -keystore debug.keystore -storepass android >/dev/null
 
       - name: Run unit & Robolectric tests
-        run: gradle :app:testDebugUnitTest --no-daemon
+        run: >
+          gradle :app:testDebugUnitTest
+          --no-daemon
+          --no-configuration-cache
+          --stacktrace
+          "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
 
       - name: Build and sign APK (v1, v2, v3)
+        shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS_DIR=$(ls -d "$SDK_ROOT"/build-tools/* | sort -V | tail -n 1)
           ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
           APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
 
@@ -66,8 +130,12 @@ jobs:
 
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
             echo "Building release APK with configured upload keystore..."
-            echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
-            KEYSTORE_PATH="$(pwd)/my-upload-key.jks" gradle :app:assembleRelease --no-daemon
+            echo "$KEYSTORE_BASE64" | tr -d '\r\n' | base64 -d > my-upload-key.jks
+            KEYSTORE_PATH="$(pwd)/my-upload-key.jks" gradle :app:assembleRelease \
+              --no-daemon \
+              --no-configuration-cache \
+              --stacktrace \
+              "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
             "$ZIPALIGN" -p -f 4 app/build/outputs/apk/release/app-release.apk build_tmp/aligned.apk
             "$APKSIGNER" sign \
               --ks my-upload-key.jks \
@@ -83,7 +151,11 @@ jobs:
             rm -f my-upload-key.jks
           else
             echo "Building signed APK (debug keystore, v1 + v2 + v3 signatures)..."
-            gradle :app:assembleDebug --no-daemon
+            gradle :app:assembleDebug \
+              --no-daemon \
+              --no-configuration-cache \
+              --stacktrace \
+              "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
             "$ZIPALIGN" -p -f 4 app/build/outputs/apk/debug/app-debug.apk build_tmp/aligned.apk
             "$APKSIGNER" sign \
               --ks debug.keystore \

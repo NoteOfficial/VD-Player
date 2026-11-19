@@ -11,8 +11,10 @@
 
 ## 2. Automatic Free GitHub Actions Build (v1, v2, v3 Signing)
 This repository includes `.github/workflows/build-apk.yml`, which runs automatically on GitHub's free `ubuntu-latest` runner whenever you push to `main` / `master` or push a version tag (`v*`):
+- Automatically accepts Android SDK licenses and installs `platform-tools`, `build-tools;36.0.0`, `platforms;android-36`, and `platforms;android-36.1`.
+- Provisions Gradle `9.3.1`, `.env.example`, and `debug.keystore` automatically with CI-safe memory limits (`-Xmx2560m`) and `--no-configuration-cache`.
 - Runs unit & Robolectric tests (`gradle :app:testDebugUnitTest`).
-- Builds and signs **`VD-Player-v1.0.0.apk`** using APK Signature Scheme **v1 + v2 + v3** (`apksigner sign --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true`).
+- Builds and signs **`VD-Player-v1.0.0.apk`** using APK Signature Scheme **v1 + v2 + v3** (`apksigner sign --min-sdk-version 21 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true`).
 - Works out of the box with zero configuration using `debug.keystore.base64`, or automatically builds an R8-minified release APK if you add optional GitHub Secrets (`KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_PASSWORD`).
 - Uploads the signed APK to the workflow's **Artifacts** tab on every push (and creates a GitHub Release automatically on `v*` tags).
 
