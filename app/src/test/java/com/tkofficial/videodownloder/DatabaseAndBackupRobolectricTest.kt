@@ -10,8 +10,12 @@ import com.tkofficial.videodownloder.database.DownloadedMediaEntity
 import com.tkofficial.videodownloder.database.FavoriteEntity
 import com.tkofficial.videodownloder.database.PlaylistEntity
 import com.tkofficial.videodownloder.database.VideoBookmarkEntity
+import com.tkofficial.videodownloder.database.VaultMetadataEntity
 import com.tkofficial.videodownloder.repositories.BackupEnvelope
+import com.tkofficial.videodownloder.repositories.VaultRepository
+import com.tkofficial.videodownloder.security.SecurityManager
 import com.tkofficial.videodownloder.utilities.FormatUtils
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
@@ -137,5 +141,87 @@ class DatabaseAndBackupRobolectricTest {
             parsed.payloadJson.replace("Media Explorer", "Tampered").toByteArray(Charsets.UTF_8)
         )
         assertNotEquals(parsed.sha256Checksum, tamperedHash)
+    }
+
+    @Test
+    fun `galleryDao renameMediaByDownloadId and deleteMediaByDownloadId stay synchronized`() = runTest {
+        val galleryDao = db.galleryDao()
+        galleryDao.insertMedia(
+            DownloadedMediaEntity(
+                downloadId = 77L,
+                title = "original",
+                fileName = "original.mp4",
+                filePath = "/tmp/original.mp4",
+                contentUri = "content://auth/original.mp4",
+                mediaType = "VIDEO",
+                mimeType = "video/mp4",
+                sizeBytes = 4096L
+            )
+        )
+
+        galleryDao.renameMediaByDownloadId(
+            downloadId = 77L,
+            newTitle = "renamed",
+            newFileName = "renamed.mp4",
+            newPath = "/tmp/renamed.mp4",
+            newContentUri = "content://auth/renamed.mp4"
+        )
+        val afterRename = galleryDao.observeAllMedia().first()
+        assertEquals(1, afterRename.size)
+        assertEquals("renamed.mp4", afterRename.first().fileName)
+        assertEquals("content://auth/renamed.mp4", afterRename.first().contentUri)
+
+        galleryDao.deleteMediaByDownloadId(77L)
+        assertTrue(galleryDao.observeAllMedia().first().isEmpty())
+    }
+
+    @Test
+    fun `vault integrity check verifies real SHA-256 checksums against DB records`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val vaultDir = FormatUtils.getVaultDir(context)
+        vaultDir.listFiles()?.forEach { it.delete() }
+
+        val validBlob = File(vaultDir, "valid_test.vlt").apply {
+            writeBytes(ByteArray(64) { (it + 1).toByte() })
+        }
+        val validHash = FormatUtils.computeFileHash(validBlob, "SHA-256")!!
+
+        val tamperedBlob = File(vaultDir, "tampered_test.vlt").apply {
+            writeBytes(ByteArray(64) { 0x2A })
+        }
+
+        val systemDao = db.systemDao()
+        systemDao.insertVaultItem(
+            VaultMetadataEntity(
+                originalName = "clip.mp4",
+                encryptedFileName = validBlob.name,
+                mediaType = "VIDEO",
+                mimeType = "video/mp4",
+                originalSizeBytes = 48L,
+                encryptedSizeBytes = validBlob.length(),
+                sha256Checksum = validHash,
+                ivHex = "00112233445566778899aabb"
+            )
+        )
+        systemDao.insertVaultItem(
+            VaultMetadataEntity(
+                originalName = "corrupt.mp4",
+                encryptedFileName = tamperedBlob.name,
+                mediaType = "VIDEO",
+                mimeType = "video/mp4",
+                originalSizeBytes = 48L,
+                encryptedSizeBytes = tamperedBlob.length(),
+                sha256Checksum = "0000deadbeef",
+                ivHex = "00112233445566778899aabb"
+            )
+        )
+
+        val repo = VaultRepository(context, systemDao, SecurityManager(context))
+        val (validCount, totalCount) = repo.verifyAllVaultIntegrity()
+        assertEquals(2, totalCount)
+        assertEquals(1, validCount)
+
+        validBlob.delete()
+        tamperedBlob.delete()
     }
 }

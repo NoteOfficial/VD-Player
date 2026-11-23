@@ -14,6 +14,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,11 +50,17 @@ import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -170,7 +178,8 @@ private data class TopLevelTab(
 class MainActivity : AppCompatActivity() {
 
     private var pendingSharedUrl = mutableStateOf<String?>(null)
-    private var pendingNavigateHome = mutableStateOf(false)
+    private var pendingNavigateTarget = mutableStateOf<String?>(null)
+    private var pendingOpenCompleted = mutableStateOf(false)
     private var isOnVideoPlayerRoute = false
     private val isInPipModeState = mutableStateOf(false)
     private var backgroundedAtMs = 0L
@@ -255,7 +264,8 @@ class MainActivity : AppCompatActivity() {
                 DownloaderVaTheme(
                     config = settings.themeConfig,
                     batterySaver = settings.batterySaverMode,
-                    lowEndMode = settings.lowEndDeviceMode
+                    lowEndMode = settings.lowEndDeviceMode,
+                    highContrast = settings.highContrastLabels
                 ) {
                 val tokens = LocalVaTokens.current
                 val navController = rememberNavController()
@@ -293,15 +303,31 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                val goHome by pendingNavigateHome
-                LaunchedEffect(goHome) {
-                    if (goHome) {
-                        navController.navigate(HomeRoute) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                val goTarget by pendingNavigateTarget
+                val openCompleted by pendingOpenCompleted
+                LaunchedEffect(goTarget, openCompleted) {
+                    val target = goTarget
+                    if (target != null) {
+                        if (openCompleted) {
+                            homeViewModel.openCompletedTab()
+                            pendingOpenCompleted.value = false
                         }
-                        pendingNavigateHome.value = false
+                        when (target) {
+                            "player" -> navController.navigate(PlayerRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            "notifications" -> navController.navigate(NotificationCenterRoute) {
+                                launchSingleTop = true
+                            }
+                            else -> navController.navigate(HomeRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                        pendingNavigateTarget.value = null
                     }
                 }
 
@@ -345,6 +371,12 @@ class MainActivity : AppCompatActivity() {
                                 )
                             }
 
+                            val playbackUi by playerViewModel.playbackUi.collectAsStateWithLifecycle()
+                            val showGlobalMiniBar = playbackUi.currentTitle.isNotBlank() &&
+                                !isInPipModeState.value &&
+                                currentDest?.hasRoute(PlayerRoute::class) != true &&
+                                currentDest?.hasRoute(VideoPlaybackRoute::class) != true
+
                             Scaffold(
                                 containerColor = tokens.background,
                                 snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -352,23 +384,53 @@ class MainActivity : AppCompatActivity() {
                                     WindowInsets(0)
                                 } else {
                                     WindowInsets.safeDrawing.only(
-                                        WindowInsetsSides.Horizontal + WindowInsetsSides.Top +
-                                            if (showPrimaryNav) WindowInsetsSides.Bottom else WindowInsetsSides.Bottom
+                                        WindowInsetsSides.Horizontal + WindowInsetsSides.Top + WindowInsetsSides.Bottom
                                     )
                                 },
                                 bottomBar = {
-                                    if (showPrimaryNav && !useRail) {
-                                        VaBottomBar(
-                                            tabs = tabs,
-                                            isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
-                                            onSelect = ::navigateToTopTab
-                                        )
+                                    Column {
+                                        AnimatedVisibility(
+                                            visible = showGlobalMiniBar,
+                                            enter = fadeIn(tween(tokens.animDurationMs)),
+                                            exit = fadeOut(tween(tokens.animDurationMs))
+                                        ) {
+                                            GlobalMiniMusicBar(
+                                                title = playbackUi.currentTitle,
+                                                artist = playbackUi.currentArtist,
+                                                isPlaying = playbackUi.isPlaying,
+                                                positionMs = playbackUi.positionMs,
+                                                durationMs = playbackUi.durationMs,
+                                                onOpenPlayer = { navigateToTopTab(PlayerRoute) },
+                                                onTogglePlayPause = playerViewModel::togglePlayPause,
+                                                onSkipNext = playerViewModel::skipNext
+                                            )
+                                        }
+                                        if (showPrimaryNav && !useRail) {
+                                            VaBottomBar(
+                                                tabs = tabs,
+                                                isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
+                                                onSelect = ::navigateToTopTab
+                                            )
+                                        }
                                     }
                                 }
                             ) { innerPadding ->
+                                val navAnimMs = if (tokens.reduceMotion) 0 else tokens.animDurationMs.coerceIn(140, 300)
                                 NavHost(
                                     navController = navController,
                                     startDestination = startRoute,
+                                    enterTransition = {
+                                        fadeIn(tween(navAnimMs)) + slideInHorizontally(tween(navAnimMs)) { it / 14 }
+                                    },
+                                    exitTransition = {
+                                        fadeOut(tween(navAnimMs)) + slideOutHorizontally(tween(navAnimMs)) { -it / 18 }
+                                    },
+                                    popEnterTransition = {
+                                        fadeIn(tween(navAnimMs)) + slideInHorizontally(tween(navAnimMs)) { -it / 14 }
+                                    },
+                                    popExitTransition = {
+                                        fadeOut(tween(navAnimMs)) + slideOutHorizontally(tween(navAnimMs)) { it / 18 }
+                                    },
                                     modifier = Modifier.fillMaxSize().padding(innerPadding)
                                 ) {
                                     composable<HomeRoute> {
@@ -651,8 +713,15 @@ class MainActivity : AppCompatActivity() {
                 val extracted = urlRegex.find(sharedText)?.value ?: sharedText
                 pendingSharedUrl.value = extracted
             }
-        } else if (intent.getStringExtra("navigate_tab") == "home" || intent.hasExtra("open_download_id")) {
-            pendingNavigateHome.value = true
+        } else {
+            val navTab = intent.getStringExtra("navigate_tab")
+            val hasOpenDownload = intent.hasExtra("open_download_id")
+            if (hasOpenDownload) {
+                pendingOpenCompleted.value = true
+                pendingNavigateTarget.value = "home"
+            } else if (navTab != null) {
+                pendingNavigateTarget.value = navTab
+            }
         }
     }
 
@@ -673,6 +742,71 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButtonText(LocaleHelper.getLocalizedString(this, language, R.string.btn_cancel))
             .build()
         prompt.authenticate(info)
+    }
+}
+
+@Composable
+private fun GlobalMiniMusicBar(
+    title: String,
+    artist: String,
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    onOpenPlayer: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    VaCard(
+        onClick = onOpenPlayer,
+        highlighted = true,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .testTag("global_mini_player_bar")
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(tokens.elevatedSurface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        artist.ifBlank { stringResource(R.string.app_name) },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onTogglePlayPause) {
+                    Icon(
+                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = stringResource(R.string.player_play_pause),
+                        tint = tokens.primaryAccent
+                    )
+                }
+                IconButton(onClick = onSkipNext) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
+                }
+            }
+            if (durationMs > 0L) {
+                LinearProgressIndicator(
+                    progress = { (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = tokens.primaryAccent
+                )
+            }
+        }
     }
 }
 
@@ -698,10 +832,12 @@ private fun VaBottomBar(
             .border(1.dp, tokens.borderSubtle, shape)
         NavStyle.PILL -> Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .clip(shape)
             .border(1.dp, tokens.borderSubtle, shape)
         NavStyle.MINIMAL -> Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
     }
 
     Surface(

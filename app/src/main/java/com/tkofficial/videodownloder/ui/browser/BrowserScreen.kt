@@ -68,6 +68,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -115,6 +116,7 @@ fun BrowserScreen(
     var webCanGoBack by remember { mutableStateOf(false) }
     val latestTabTitle by androidx.compose.runtime.rememberUpdatedState(currentTab.title)
     val latestSnifferEnabled by androidx.compose.runtime.rememberUpdatedState(settings.browserMediaSnifferEnabled)
+    val latestAllowHttp by androidx.compose.runtime.rememberUpdatedState(settings.allowCleartextHttp)
 
     BackHandler(enabled = webCanGoBack) {
         webViewRef?.goBack()
@@ -129,7 +131,19 @@ fun BrowserScreen(
     val isBookmarked = bookmarks.any { it.url == currentTab.url }
 
     LaunchedEffect(currentTab.id) {
-        webViewRef?.loadUrl(currentTab.url)
+        val wv = webViewRef ?: return@LaunchedEffect
+        if (wv.url != currentTab.url) {
+            wv.loadUrl(currentTab.url)
+        }
+        webCanGoBack = wv.canGoBack()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef?.stopLoading()
+            webViewRef?.destroy()
+            webViewRef = null
+        }
     }
 
     Column(
@@ -291,6 +305,27 @@ fun BrowserScreen(
                         }
 
                         webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                viewModel.clearDetectedMedia()
+                                webCanGoBack = view?.canGoBack() == true
+                            }
+
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val reqUri = request?.url ?: return false
+                                val scheme = reqUri.scheme?.lowercase().orEmpty()
+                                return when {
+                                    scheme == "https" -> false
+                                    scheme == "http" -> !latestAllowHttp
+                                    scheme in setOf("javascript", "file", "content", "data", "about") -> true
+                                    else -> {
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, reqUri))
+                                        }
+                                        true
+                                    }
+                                }
+                            }
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 webCanGoBack = view?.canGoBack() == true
                                 val resolvedUrl = url ?: return

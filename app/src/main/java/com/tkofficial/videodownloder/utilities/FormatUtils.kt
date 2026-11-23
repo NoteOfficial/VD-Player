@@ -2,7 +2,6 @@ package com.tkofficial.videodownloder.utilities
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.URLUtil
 import com.tkofficial.videodownloder.models.MediaCategory
 import java.io.File
 import java.io.FileInputStream
@@ -59,7 +58,7 @@ object FormatUtils {
             val uri = URI(trimmed)
             val scheme = uri.scheme?.lowercase(Locale.US) ?: return false
             val validScheme = if (allowHttp) (scheme == "https" || scheme == "http") else (scheme == "https")
-            validScheme && !uri.host.isNullOrBlank() && URLUtil.isValidUrl(trimmed)
+            validScheme && !uri.host.isNullOrBlank() && !trimmed.any { it.isWhitespace() }
         } catch (_: Exception) {
             false
         }

@@ -75,7 +75,13 @@ data class AppSettings(
     // Network & API Management
     val allowCleartextHttp: Boolean = false,
     val requestTimeoutSeconds: Int = 30,
+    val connectTimeoutSeconds: Int = 15,
+    val retryLimit: Int = 2,
+    val apiEnabled: Boolean = false,
+    val apiVersion: String = "v1",
     val customExtractorEndpoint: String = "",
+    val secondaryExtractorEndpoint: String = "",
+    val backupExtractorEndpoint: String = "",
     val encryptedExtractorApiKey: String = "",
 
     // Privacy & Security
@@ -137,7 +143,13 @@ class PreferencesRepository(private val context: Context) {
         val BROWSER_HISTORY = booleanPreferencesKey("browser_history")
         val ALLOW_HTTP = booleanPreferencesKey("allow_cleartext_http")
         val TIMEOUT_SEC = intPreferencesKey("request_timeout_sec")
+        val CONNECT_TIMEOUT_SEC = intPreferencesKey("connect_timeout_sec")
+        val RETRY_LIMIT = intPreferencesKey("api_retry_limit")
+        val API_ENABLED = booleanPreferencesKey("api_enabled")
+        val API_VERSION = stringPreferencesKey("api_version")
         val EXTRACTOR_URL = stringPreferencesKey("custom_extractor_url")
+        val SECONDARY_EXTRACTOR_URL = stringPreferencesKey("secondary_extractor_url")
+        val BACKUP_EXTRACTOR_URL = stringPreferencesKey("backup_extractor_url")
         val EXTRACTOR_KEY_ENC = stringPreferencesKey("encrypted_extractor_key")
         val APP_LOCK = booleanPreferencesKey("app_lock_enabled")
         val BIOMETRIC = booleanPreferencesKey("biometric_enabled")
@@ -206,7 +218,13 @@ class PreferencesRepository(private val context: Context) {
             browserSaveHistory = prefs[Keys.BROWSER_HISTORY] ?: true,
             allowCleartextHttp = prefs[Keys.ALLOW_HTTP] ?: false,
             requestTimeoutSeconds = (prefs[Keys.TIMEOUT_SEC] ?: 30).coerceIn(10, 120),
+            connectTimeoutSeconds = (prefs[Keys.CONNECT_TIMEOUT_SEC] ?: 15).coerceIn(5, 60),
+            retryLimit = (prefs[Keys.RETRY_LIMIT] ?: 2).coerceIn(0, 5),
+            apiEnabled = prefs[Keys.API_ENABLED] ?: false,
+            apiVersion = prefs[Keys.API_VERSION] ?: "v1",
             customExtractorEndpoint = prefs[Keys.EXTRACTOR_URL] ?: "",
+            secondaryExtractorEndpoint = prefs[Keys.SECONDARY_EXTRACTOR_URL] ?: "",
+            backupExtractorEndpoint = prefs[Keys.BACKUP_EXTRACTOR_URL] ?: "",
             encryptedExtractorApiKey = prefs[Keys.EXTRACTOR_KEY_ENC] ?: "",
             appLockEnabled = prefs[Keys.APP_LOCK] ?: false,
             biometricEnabled = prefs[Keys.BIOMETRIC] ?: false,
@@ -259,7 +277,13 @@ class PreferencesRepository(private val context: Context) {
                 browserSaveHistory = prefs[Keys.BROWSER_HISTORY] ?: true,
                 allowCleartextHttp = prefs[Keys.ALLOW_HTTP] ?: false,
                 requestTimeoutSeconds = prefs[Keys.TIMEOUT_SEC] ?: 30,
+                connectTimeoutSeconds = prefs[Keys.CONNECT_TIMEOUT_SEC] ?: 15,
+                retryLimit = prefs[Keys.RETRY_LIMIT] ?: 2,
+                apiEnabled = prefs[Keys.API_ENABLED] ?: false,
+                apiVersion = prefs[Keys.API_VERSION] ?: "v1",
                 customExtractorEndpoint = prefs[Keys.EXTRACTOR_URL] ?: "",
+                secondaryExtractorEndpoint = prefs[Keys.SECONDARY_EXTRACTOR_URL] ?: "",
+                backupExtractorEndpoint = prefs[Keys.BACKUP_EXTRACTOR_URL] ?: "",
                 encryptedExtractorApiKey = prefs[Keys.EXTRACTOR_KEY_ENC] ?: "",
                 appLockEnabled = prefs[Keys.APP_LOCK] ?: false,
                 biometricEnabled = prefs[Keys.BIOMETRIC] ?: false,
@@ -307,8 +331,14 @@ class PreferencesRepository(private val context: Context) {
             prefs[Keys.BROWSER_SNIFFER] = updated.browserMediaSnifferEnabled
             prefs[Keys.BROWSER_HISTORY] = updated.browserSaveHistory
             prefs[Keys.ALLOW_HTTP] = updated.allowCleartextHttp
-            prefs[Keys.TIMEOUT_SEC] = updated.requestTimeoutSeconds
+            prefs[Keys.TIMEOUT_SEC] = updated.requestTimeoutSeconds.coerceIn(10, 120)
+            prefs[Keys.CONNECT_TIMEOUT_SEC] = updated.connectTimeoutSeconds.coerceIn(5, 60)
+            prefs[Keys.RETRY_LIMIT] = updated.retryLimit.coerceIn(0, 5)
+            prefs[Keys.API_ENABLED] = updated.apiEnabled
+            prefs[Keys.API_VERSION] = updated.apiVersion.ifBlank { "v1" }
             prefs[Keys.EXTRACTOR_URL] = updated.customExtractorEndpoint
+            prefs[Keys.SECONDARY_EXTRACTOR_URL] = updated.secondaryExtractorEndpoint
+            prefs[Keys.BACKUP_EXTRACTOR_URL] = updated.backupExtractorEndpoint
             prefs[Keys.EXTRACTOR_KEY_ENC] = updated.encryptedExtractorApiKey
             prefs[Keys.APP_LOCK] = updated.appLockEnabled
             prefs[Keys.BIOMETRIC] = updated.biometricEnabled

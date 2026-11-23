@@ -1,6 +1,9 @@
 package com.tkofficial.videodownloder.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -22,6 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -56,13 +61,36 @@ fun VaCard(
     val tokens = LocalVaTokens.current
     val shape = RoundedCornerShape(tokens.cardRadius)
     val elevation = (tokens.shadowIntensity * if (highlighted) 14f else 6f).dp
-    val borderColor = if (highlighted) {
-        tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
-    } else {
-        tokens.borderSubtle
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    val pressScale by animateFloatAsState(
+        targetValue = if (onClick != null && pressed && !tokens.reduceMotion) 0.975f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "card_press_scale"
+    )
+
+    val targetBorder = when {
+        pressed && onClick != null -> tokens.primaryAccent.copy(alpha = 0.65f)
+        highlighted -> tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
+        else -> tokens.borderSubtle
     }
+    val borderColor by animateColorAsState(
+        targetValue = targetBorder,
+        animationSpec = tween(durationMillis = if (tokens.reduceMotion) 0 else 180),
+        label = "card_border"
+    )
 
     val cardModifier = modifier
+        .graphicsLayer {
+            if (onClick != null && !tokens.reduceMotion) {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+        }
         .shadow(
             elevation = elevation,
             shape = shape,
@@ -72,10 +100,79 @@ fun VaCard(
         .clip(shape)
         .background(tokens.surfaceGradient, shape)
         .border(BorderStroke(1.dp, borderColor), shape)
-        .let { m -> if (onClick != null) m.clickable(onClick = onClick) else m }
+        .let { m ->
+            if (onClick != null) {
+                m.clickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick
+                )
+            } else {
+                m
+            }
+        }
         .padding(contentPadding)
 
     Column(modifier = cardModifier, content = content)
+}
+
+@Composable
+fun VaFolderCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false
+) {
+    val tokens = LocalVaTokens.current
+    VaCard(
+        modifier = modifier,
+        onClick = onClick,
+        highlighted = highlighted,
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(tokens.primaryAccent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tokens.primaryAccent,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable

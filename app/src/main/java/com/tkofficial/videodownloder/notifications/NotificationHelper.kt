@@ -260,6 +260,32 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
+    fun notifyStorageWarning(availableBytes: Long) {
+        if (!hasNotificationPermission()) return
+        val openIntent = PendingIntent.getActivity(
+            context,
+            30001,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("navigate_tab", "notifications")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val formatted = FormatUtils.formatBytes(availableBytes.coerceAtLeast(0L))
+        val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle(context.getString(R.string.notif_storage_warning_title))
+            .setContentText(context.getString(R.string.notif_storage_warning_body, formatted))
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+
+        try {
+            NotificationManagerCompat.from(context).notify(30001, builder.build())
+        } catch (_: SecurityException) {
+            // Permission revoked concurrently
+        }
+    }
+
     fun cancelProgressNotification(downloadId: Long) {
         NotificationManagerCompat.from(context).cancel(notificationIdFor(downloadId))
     }

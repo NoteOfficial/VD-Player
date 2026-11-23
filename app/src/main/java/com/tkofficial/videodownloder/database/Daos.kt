@@ -147,8 +147,14 @@ interface GalleryDao {
     @Query("UPDATE downloaded_media SET albumId = :albumId WHERE id = :id")
     suspend fun moveToAlbum(id: Long, albumId: Long?)
 
-    @Query("UPDATE downloaded_media SET title = :newTitle, fileName = :newFileName, filePath = :newPath WHERE id = :id")
-    suspend fun renameMedia(id: Long, newTitle: String, newFileName: String, newPath: String)
+    @Query("UPDATE downloaded_media SET title = :newTitle, fileName = :newFileName, filePath = :newPath, contentUri = :newContentUri WHERE id = :id")
+    suspend fun renameMedia(id: Long, newTitle: String, newFileName: String, newPath: String, newContentUri: String)
+
+    @Query("UPDATE downloaded_media SET title = :newTitle, fileName = :newFileName, filePath = :newPath, contentUri = :newContentUri WHERE downloadId = :downloadId")
+    suspend fun renameMediaByDownloadId(downloadId: Long, newTitle: String, newFileName: String, newPath: String, newContentUri: String)
+
+    @Query("DELETE FROM downloaded_media WHERE downloadId = :downloadId")
+    suspend fun deleteMediaByDownloadId(downloadId: Long)
 
     @Query("DELETE FROM downloaded_media WHERE id = :id")
     suspend fun deletePermanently(id: Long)
@@ -242,6 +248,9 @@ interface SystemDao {
 
     @Query("SELECT * FROM vault_metadata ORDER BY createdAt DESC")
     fun observeVaultItems(): Flow<List<VaultMetadataEntity>>
+
+    @Query("SELECT * FROM vault_metadata")
+    suspend fun getVaultItemsOnce(): List<VaultMetadataEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVaultItem(item: VaultMetadataEntity): Long

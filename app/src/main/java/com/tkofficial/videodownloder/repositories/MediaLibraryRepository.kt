@@ -23,11 +23,9 @@ class MediaLibraryRepository(
     private val galleryDao: GalleryDao,
     private val playerDao: PlayerLibraryDao
 ) {
-    suspend fun loadVideoLibrary(
+    suspend fun loadRawVideos(
         persistedFolderUris: Set<String>,
-        pickedVideoUris: Set<String>,
-        historyMap: Map<String, PlaybackHistoryEntity>,
-        favoriteKeys: Set<String>
+        pickedVideoUris: Set<String>
     ): List<DeviceMediaItem> = withContext(Dispatchers.IO) {
         val result = linkedMapOf<String, DeviceMediaItem>()
 
@@ -37,7 +35,6 @@ class MediaLibraryRepository(
             val file = File(entity.filePath)
             if (file.exists()) {
                 val uriStr = Uri.fromFile(file).toString()
-                val hist = historyMap[uriStr]
                 result[uriStr] = DeviceMediaItem(
                     id = "dl_${entity.id}",
                     uriString = uriStr,
@@ -52,10 +49,7 @@ class MediaLibraryRepository(
                     isVideo = true,
                     isDownloadedByApp = true,
                     dateAddedSec = entity.addedAt / 1000L,
-                    lastPositionMs = hist?.lastPositionMs ?: 0L,
-                    playCount = hist?.playCount ?: 0,
-                    lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                    isFavorite = favoriteKeys.contains(uriStr) || entity.isFavorite
+                    isFavorite = entity.isFavorite
                 )
             }
         }
@@ -71,7 +65,6 @@ class MediaLibraryRepository(
                     val name = doc.name.orEmpty()
                     if (doc.isFile && (type.startsWith("video/") || FormatUtils.classifyMimeType(type, name).name == "VIDEO")) {
                         val uriStr = doc.uri.toString()
-                        val hist = historyMap[uriStr]
                         result.putIfAbsent(
                             uriStr,
                             DeviceMediaItem(
@@ -85,11 +78,7 @@ class MediaLibraryRepository(
                                 mimeType = type.ifBlank { "video/mp4" },
                                 isVideo = true,
                                 isDownloadedByApp = false,
-                                dateAddedSec = doc.lastModified() / 1000L,
-                                lastPositionMs = hist?.lastPositionMs ?: 0L,
-                                playCount = hist?.playCount ?: 0,
-                                lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                                isFavorite = favoriteKeys.contains(uriStr)
+                                dateAddedSec = doc.lastModified() / 1000L
                             )
                         )
                     }
@@ -102,7 +91,6 @@ class MediaLibraryRepository(
             if (!result.containsKey(uriStr)) {
                 val uri = Uri.parse(uriStr)
                 val name = FormatUtils.getFileNameFromUri(context, uri)
-                val hist = historyMap[uriStr]
                 result[uriStr] = DeviceMediaItem(
                     id = "pick_${uriStr.hashCode()}",
                     uriString = uriStr,
@@ -111,11 +99,7 @@ class MediaLibraryRepository(
                     folderName = "Selected Videos",
                     mimeType = context.contentResolver.getType(uri) ?: "video/mp4",
                     isVideo = true,
-                    isDownloadedByApp = false,
-                    lastPositionMs = hist?.lastPositionMs ?: 0L,
-                    playCount = hist?.playCount ?: 0,
-                    lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                    isFavorite = favoriteKeys.contains(uriStr)
+                    isDownloadedByApp = false
                 )
             }
         }
@@ -123,12 +107,35 @@ class MediaLibraryRepository(
         result.values.toList()
     }
 
-    suspend fun loadAudioLibrary(
-        hasAudioPermission: Boolean,
-        pickedAudioUris: Set<String>,
+    suspend fun applyVideoMetadata(
+        rawVideos: List<DeviceMediaItem>,
         historyMap: Map<String, PlaybackHistoryEntity>,
-        favoriteKeys: Set<String>,
-        overrides: Map<String, SongMetadataOverrideEntity>
+        favoriteKeys: Set<String>
+    ): List<DeviceMediaItem> = withContext(Dispatchers.Default) {
+        rawVideos.map { item ->
+            val hist = historyMap[item.uriString]
+            item.copy(
+                lastPositionMs = hist?.lastPositionMs ?: 0L,
+                playCount = hist?.playCount ?: 0,
+                lastPlayedAt = hist?.lastPlayedAt ?: 0L,
+                isFavorite = favoriteKeys.contains(item.uriString) || item.isFavorite
+            )
+        }
+    }
+
+    suspend fun loadVideoLibrary(
+        persistedFolderUris: Set<String>,
+        pickedVideoUris: Set<String>,
+        historyMap: Map<String, PlaybackHistoryEntity>,
+        favoriteKeys: Set<String>
+    ): List<DeviceMediaItem> {
+        val raw = loadRawVideos(persistedFolderUris, pickedVideoUris)
+        return applyVideoMetadata(raw, historyMap, favoriteKeys)
+    }
+
+    suspend fun loadRawAudio(
+        hasAudioPermission: Boolean,
+        pickedAudioUris: Set<String>
     ): List<DeviceMediaItem> = withContext(Dispatchers.IO) {
         val result = linkedMapOf<String, DeviceMediaItem>()
 
@@ -138,27 +145,21 @@ class MediaLibraryRepository(
             val file = File(entity.filePath)
             if (file.exists()) {
                 val uriStr = Uri.fromFile(file).toString()
-                val ov = overrides[uriStr]
-                val hist = historyMap[uriStr]
                 result[uriStr] = DeviceMediaItem(
                     id = "dl_aud_${entity.id}",
                     uriString = uriStr,
-                    title = ov?.customTitle ?: entity.title,
+                    title = entity.title,
                     fileName = entity.fileName,
                     folderName = "VD Player",
-                    artist = ov?.customArtist ?: "Downloaded Audio",
-                    album = ov?.customAlbum ?: "VD Player",
+                    artist = "Downloaded Audio",
+                    album = "VD Player",
                     durationMs = entity.durationMs,
                     sizeBytes = entity.sizeBytes,
                     mimeType = entity.mimeType,
                     isVideo = false,
                     isDownloadedByApp = true,
                     dateAddedSec = entity.addedAt / 1000L,
-                    lastPositionMs = hist?.lastPositionMs ?: 0L,
-                    playCount = hist?.playCount ?: 0,
-                    lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                    isFavorite = favoriteKeys.contains(uriStr) || entity.isFavorite,
-                    albumArtUri = ov?.customArtPath
+                    isFavorite = entity.isFavorite
                 )
             }
         }
@@ -207,10 +208,8 @@ class MediaLibraryRepository(
                         val id = cursor.getLong(idCol)
                         val contentUri = ContentUris.withAppendedId(collection, id)
                         val uriStr = contentUri.toString()
-                        val ov = overrides[uriStr]
-                        val hist = historyMap[uriStr]
                         val albumId = cursor.getLong(albumIdCol)
-                        val artUri = ov?.customArtPath ?: ContentUris.withAppendedId(
+                        val artUri = ContentUris.withAppendedId(
                             Uri.parse("content://media/external/audio/albumart"),
                             albumId
                         ).toString()
@@ -220,21 +219,17 @@ class MediaLibraryRepository(
                             DeviceMediaItem(
                                 id = "ms_aud_$id",
                                 uriString = uriStr,
-                                title = ov?.customTitle ?: (cursor.getString(titleCol) ?: "Unknown Track"),
+                                title = cursor.getString(titleCol) ?: "Unknown Track",
                                 fileName = cursor.getString(nameCol) ?: "audio",
                                 folderName = if (bucketCol >= 0) cursor.getString(bucketCol) ?: "Music" else "Music",
-                                artist = ov?.customArtist ?: (cursor.getString(artistCol) ?: "Unknown Artist"),
-                                album = ov?.customAlbum ?: (cursor.getString(albumCol) ?: "Unknown Album"),
+                                artist = cursor.getString(artistCol) ?: "Unknown Artist",
+                                album = cursor.getString(albumCol) ?: "Unknown Album",
                                 durationMs = cursor.getLong(durCol),
                                 sizeBytes = cursor.getLong(sizeCol),
                                 mimeType = cursor.getString(mimeCol) ?: "audio/*",
                                 isVideo = false,
                                 isDownloadedByApp = false,
                                 dateAddedSec = cursor.getLong(dateCol),
-                                lastPositionMs = hist?.lastPositionMs ?: 0L,
-                                playCount = hist?.playCount ?: 0,
-                                lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                                isFavorite = favoriteKeys.contains(uriStr),
                                 albumArtUri = artUri
                             )
                         )
@@ -248,28 +243,54 @@ class MediaLibraryRepository(
             if (!result.containsKey(uriStr)) {
                 val uri = Uri.parse(uriStr)
                 val name = FormatUtils.getFileNameFromUri(context, uri)
-                val ov = overrides[uriStr]
-                val hist = historyMap[uriStr]
                 result[uriStr] = DeviceMediaItem(
                     id = "pick_aud_${uriStr.hashCode()}",
                     uriString = uriStr,
-                    title = ov?.customTitle ?: name.substringBeforeLast('.'),
+                    title = name.substringBeforeLast('.'),
                     fileName = name,
                     folderName = "Picked Audio",
-                    artist = ov?.customArtist ?: "Local File",
-                    album = ov?.customAlbum ?: "Picked Audio",
+                    artist = "Local File",
+                    album = "Picked Audio",
                     mimeType = context.contentResolver.getType(uri) ?: "audio/*",
-                    isVideo = false,
-                    lastPositionMs = hist?.lastPositionMs ?: 0L,
-                    playCount = hist?.playCount ?: 0,
-                    lastPlayedAt = hist?.lastPlayedAt ?: 0L,
-                    isFavorite = favoriteKeys.contains(uriStr),
-                    albumArtUri = ov?.customArtPath
+                    isVideo = false
                 )
             }
         }
 
         result.values.toList()
+    }
+
+    suspend fun applyAudioMetadata(
+        rawAudio: List<DeviceMediaItem>,
+        historyMap: Map<String, PlaybackHistoryEntity>,
+        favoriteKeys: Set<String>,
+        overrides: Map<String, SongMetadataOverrideEntity>
+    ): List<DeviceMediaItem> = withContext(Dispatchers.Default) {
+        rawAudio.map { item ->
+            val ov = overrides[item.uriString]
+            val hist = historyMap[item.uriString]
+            item.copy(
+                title = ov?.customTitle?.takeIf { it.isNotBlank() } ?: item.title,
+                artist = ov?.customArtist?.takeIf { it.isNotBlank() } ?: item.artist,
+                album = ov?.customAlbum?.takeIf { it.isNotBlank() } ?: item.album,
+                lastPositionMs = hist?.lastPositionMs ?: 0L,
+                playCount = hist?.playCount ?: 0,
+                lastPlayedAt = hist?.lastPlayedAt ?: 0L,
+                isFavorite = favoriteKeys.contains(item.uriString) || item.isFavorite,
+                albumArtUri = ov?.customArtPath ?: item.albumArtUri
+            )
+        }
+    }
+
+    suspend fun loadAudioLibrary(
+        hasAudioPermission: Boolean,
+        pickedAudioUris: Set<String>,
+        historyMap: Map<String, PlaybackHistoryEntity>,
+        favoriteKeys: Set<String>,
+        overrides: Map<String, SongMetadataOverrideEntity>
+    ): List<DeviceMediaItem> {
+        val raw = loadRawAudio(hasAudioPermission, pickedAudioUris)
+        return applyAudioMetadata(raw, historyMap, favoriteKeys, overrides)
     }
 
     suspend fun toggleFavorite(item: DeviceMediaItem) {

@@ -22,11 +22,11 @@ class LinkAnalyzer(
 ) {
     private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
 
-    fun buildClient(timeoutSeconds: Int): OkHttpClient {
+    fun buildClient(timeoutSeconds: Int, connectTimeoutSeconds: Int = 15): OkHttpClient {
         return baseClient.newBuilder()
-            .connectTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
-            .readTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
-            .writeTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
+            .connectTimeout(connectTimeoutSeconds.coerceIn(5, 60).toLong(), TimeUnit.SECONDS)
+            .readTimeout(timeoutSeconds.coerceIn(10, 120).toLong(), TimeUnit.SECONDS)
+            .writeTimeout(timeoutSeconds.coerceIn(10, 120).toLong(), TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -37,32 +37,64 @@ class LinkAnalyzer(
         allowHttp: Boolean,
         timeoutSeconds: Int,
         customEndpoint: String,
-        decryptedApiKey: String
+        decryptedApiKey: String,
+        secondaryEndpoint: String = "",
+        backupEndpoint: String = "",
+        apiVersion: String = "v1",
+        connectTimeoutSeconds: Int = 15,
+        retryLimit: Int = 2,
+        apiEnabled: Boolean = true
     ): Result<AnalyzedMedia> = withContext(Dispatchers.IO) {
         val url = rawUrl.trim()
         if (!FormatUtils.isValidDownloadUrl(url, allowHttp)) {
             return@withContext Result.failure(
                 IllegalArgumentException(
                     if (allowHttp) "Invalid URL. Enter a valid http:// or https:// URL."
-                    else "HTTPS-only policy active. Enter a valid https:// URL or enable local HTTP in Network Settings."
+                    else "HTTPS-only policy active. Enter a valid https:// URL or enable HTTP in Network Settings."
                 )
             )
         }
 
-        val client = buildClient(timeoutSeconds)
+        val client = buildClient(timeoutSeconds, connectTimeoutSeconds)
 
-        // 1. If user configured a valid HTTPS extractor API endpoint, query it first
-        if (customEndpoint.isNotBlank() && FormatUtils.isValidDownloadUrl(customEndpoint, allowHttp = false)) {
-            val apiResult = queryCustomExtractor(client, customEndpoint.trim(), decryptedApiKey, url)
-            if (apiResult != null) {
-                return@withContext Result.success(apiResult)
+        // 1. If API service is enabled and endpoints are configured, query Primary -> Secondary -> Backup
+        val orderedEndpoints = listOf(customEndpoint, secondaryEndpoint, backupEndpoint)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        var apiErrorNote: String? = null
+        if (apiEnabled && orderedEndpoints.isNotEmpty()) {
+            for (endpoint in orderedEndpoints) {
+                if (!FormatUtils.isValidDownloadUrl(endpoint, allowHttp = allowHttp)) {
+                    apiErrorNote = "Invalid Configuration: $endpoint"
+                    continue
+                }
+                val attempts = retryLimit.coerceIn(0, 5) + 1
+                for (attempt in 0 until attempts) {
+                    val outcome = queryCustomExtractor(
+                        client = client,
+                        endpoint = endpoint,
+                        apiKey = decryptedApiKey,
+                        apiVersion = apiVersion,
+                        targetUrl = url,
+                        allowHttp = allowHttp
+                    )
+                    if (outcome.media != null) {
+                        return@withContext Result.success(outcome.media)
+                    }
+                    apiErrorNote = outcome.errorReason
+                    if (outcome.isAuthFailure) break // Do not retry 401/403 on same endpoint
+                }
             }
         }
 
         // 2. Direct HTTP HEAD / GET Range probe for authentic server headers
         val headInfo = probeHeaders(client, url)
             ?: return@withContext Result.failure(
-                IllegalStateException("Unable to reach host or read HTTP headers from ${FormatUtils.extractHost(url)}.")
+                IllegalStateException(
+                    apiErrorNote ?: "Unable to reach host or read HTTP headers from ${FormatUtils.extractHost(url)}."
+                )
             )
 
         val contentType = headInfo.mimeType.lowercase()
@@ -70,15 +102,17 @@ class LinkAnalyzer(
 
         // If the server returned an HTML webpage, parse real <video>, <audio>, <meta property="og:..."> tags
         if (contentType.contains("text/html") || contentType.contains("application/xhtml")) {
-            val htmlMedia = parseHtmlMediaTags(client, headInfo.finalUrl, host)
+            val htmlMedia = parseHtmlMediaTags(client, headInfo.finalUrl, host, allowHttp)
             if (htmlMedia != null) {
                 return@withContext Result.success(htmlMedia)
             }
+            val apiHint = when {
+                apiErrorNote != null -> apiErrorNote
+                !apiEnabled || orderedEndpoints.isEmpty() -> "API Not Configured. Configure an authorized API in Settings -> API Management for protected platforms."
+                else -> "Unsupported platform or no downloadable media stream found on $host."
+            }
             return@withContext Result.failure(
-                IllegalStateException(
-                    "No direct downloadable media stream was found in HTML from $host. " +
-                        "Protected/DRM or login-gated platforms require an authorized API in Settings -> API Management."
-                )
+                IllegalStateException(apiHint)
             )
         }
 
@@ -114,12 +148,20 @@ class LinkAnalyzer(
         )
     }
 
+    private data class ExtractorOutcome(
+        val media: AnalyzedMedia? = null,
+        val errorReason: String? = null,
+        val isAuthFailure: Boolean = false
+    )
+
     private suspend fun queryCustomExtractor(
         client: OkHttpClient,
         endpoint: String,
         apiKey: String,
-        targetUrl: String
-    ): AnalyzedMedia? {
+        apiVersion: String,
+        targetUrl: String,
+        allowHttp: Boolean
+    ): ExtractorOutcome {
         return runCatching {
             val retrofit = Retrofit.Builder()
                 .baseUrl("https://localhost/")
@@ -128,13 +170,29 @@ class LinkAnalyzer(
                 .build()
             val service = retrofit.create(CustomExtractorService::class.java)
             val auth = if (apiKey.isNotBlank()) "Bearer $apiKey" else null
-            val response = service.resolveMedia(endpoint, auth, request = ExtractorApiRequest(targetUrl))
-            if (!response.isSuccessful) return null
-            val body = response.body() ?: return null
+            val response = service.resolveMedia(
+                endpointUrl = endpoint,
+                authorization = auth,
+                apiVersion = apiVersion.ifBlank { "v1" },
+                request = ExtractorApiRequest(targetUrl)
+            )
+            if (!response.isSuccessful) {
+                val isAuth = response.code() == 401 || response.code() == 403
+                val label = when {
+                    isAuth -> "Authentication Failed (HTTP ${response.code()})"
+                    response.code() == 451 -> "Download Blocked (HTTP 451)"
+                    else -> "API Connection Failed (HTTP ${response.code()})"
+                }
+                return ExtractorOutcome(errorReason = label, isAuthFailure = isAuth)
+            }
+            val body = response.body() ?: return ExtractorOutcome(errorReason = "API Connection Failed: Empty JSON body")
+            if (!body.error.isNullOrBlank()) {
+                return ExtractorOutcome(errorReason = body.error)
+            }
             val opts = mutableListOf<MediaFormatOption>()
             body.options?.forEachIndexed { idx, dto ->
                 val optUrl = dto.url?.trim().orEmpty()
-                if (FormatUtils.isValidDownloadUrl(optUrl, allowHttp = false)) {
+                if (FormatUtils.isValidDownloadUrl(optUrl, allowHttp = allowHttp)) {
                     val mime = dto.mimeType ?: "video/mp4"
                     opts += MediaFormatOption(
                         id = "opt_$idx",
@@ -148,7 +206,7 @@ class LinkAnalyzer(
                 }
             }
             val singleUrl = body.url?.trim().orEmpty()
-            if (opts.isEmpty() && FormatUtils.isValidDownloadUrl(singleUrl, allowHttp = false)) {
+            if (opts.isEmpty() && FormatUtils.isValidDownloadUrl(singleUrl, allowHttp = allowHttp)) {
                 val head = probeHeaders(client, singleUrl)
                 val mime = head?.mimeType ?: "video/mp4"
                 opts += MediaFormatOption(
@@ -161,21 +219,27 @@ class LinkAnalyzer(
                     supportsRange = head?.supportsRange ?: false
                 )
             }
-            if (opts.isEmpty()) return null
+            if (opts.isEmpty()) {
+                return ExtractorOutcome(errorReason = "No downloadable stream returned by API")
+            }
             val first = opts.first()
-            AnalyzedMedia(
-                sourceUrl = targetUrl,
-                title = body.title ?: body.filename ?: deriveFileNameFromUrl(first.downloadUrl, first.mimeType),
-                platform = "${FormatUtils.extractHost(targetUrl)} (API)",
-                thumbnailUrl = body.thumbnail,
-                durationMs = body.durationMs,
-                totalBytes = first.estimatedBytes,
-                mimeType = first.mimeType,
-                mediaCategory = FormatUtils.classifyMimeType(first.mimeType, body.filename),
-                supportsRange = first.supportsRange,
-                options = opts
+            ExtractorOutcome(
+                media = AnalyzedMedia(
+                    sourceUrl = targetUrl,
+                    title = body.title ?: body.filename ?: deriveFileNameFromUrl(first.downloadUrl, first.mimeType),
+                    platform = "${FormatUtils.extractHost(targetUrl)} (API)",
+                    thumbnailUrl = body.thumbnail,
+                    durationMs = body.durationMs,
+                    totalBytes = first.estimatedBytes,
+                    mimeType = first.mimeType,
+                    mediaCategory = FormatUtils.classifyMimeType(first.mimeType, body.filename),
+                    supportsRange = first.supportsRange,
+                    options = opts
+                )
             )
-        }.getOrNull()
+        }.getOrElse { err ->
+            ExtractorOutcome(errorReason = "API Connection Failed: ${err.localizedMessage ?: "Network error"}")
+        }
     }
 
     private data class HeadProbeResult(
@@ -240,7 +304,7 @@ class LinkAnalyzer(
         }.getOrNull()
     }
 
-    private fun parseHtmlMediaTags(client: OkHttpClient, pageUrl: String, host: String): AnalyzedMedia? {
+    private fun parseHtmlMediaTags(client: OkHttpClient, pageUrl: String, host: String, allowHttp: Boolean = false): AnalyzedMedia? {
         val req = Request.Builder()
             .url(pageUrl)
             .get()
@@ -291,7 +355,7 @@ class LinkAnalyzer(
 
         val options = mutableListOf<MediaFormatOption>()
         candidates.entries.take(6).forEachIndexed { idx, (mediaUrl, fallbackMime) ->
-            if (FormatUtils.isValidDownloadUrl(mediaUrl, allowHttp = false)) {
+            if (FormatUtils.isValidDownloadUrl(mediaUrl, allowHttp = allowHttp)) {
                 val probe = probeHeaders(client, mediaUrl)
                 val mime = probe?.mimeType?.takeIf { !it.contains("text/html") } ?: fallbackMime
                 val size = probe?.contentLength ?: -1L

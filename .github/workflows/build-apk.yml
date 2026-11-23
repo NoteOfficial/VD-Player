@@ -105,9 +105,9 @@ jobs:
           fi
           keytool -list -keystore debug.keystore -storepass android >/dev/null
 
-      - name: Run unit & Robolectric tests
+      - name: Run unit, Robolectric tests & Android Lint
         run: >
-          gradle :app:testDebugUnitTest
+          gradle :app:testDebugUnitTest :app:lintDebug
           --no-daemon
           --no-configuration-cache
           --stacktrace

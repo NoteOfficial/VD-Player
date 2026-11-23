@@ -2,10 +2,17 @@ package com.tkofficial.videodownloder.ui.player
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +36,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
@@ -36,15 +44,19 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
@@ -100,6 +112,7 @@ import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.models.DeviceMediaItem
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaFolderCard
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
@@ -200,6 +213,7 @@ fun PlayerScreen(
     var showSleepDialog by remember { mutableStateOf(false) }
     var showQueueDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var activePlaylistDetail by remember { mutableStateOf<com.tkofficial.videodownloder.database.PlaylistEntity?>(null) }
     var addToPlaylistItem by remember { mutableStateOf<DeviceMediaItem?>(null) }
     var editMetadataItem by remember { mutableStateOf<DeviceMediaItem?>(null) }
 
@@ -237,6 +251,7 @@ fun PlayerScreen(
                     selectedTab = videoTab,
                     playlists = playlists.filter { it.mediaCategory == "VIDEO" },
                     onSelectTab = viewModel::selectVideoTab,
+                    onRefresh = viewModel::refreshLibraries,
                     onPickVideos = {
                         videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
                     },
@@ -244,7 +259,8 @@ fun PlayerScreen(
                     onPlayVideo = { item -> onOpenVideoPlayer(item.uriString, item.title) },
                     onToggleFavorite = viewModel::toggleFavorite,
                     onAddToPlaylist = { addToPlaylistItem = it },
-                    onCreatePlaylist = { showCreatePlaylistDialog = true }
+                    onCreatePlaylist = { showCreatePlaylistDialog = true },
+                    onOpenPlaylist = { activePlaylistDetail = it }
                 )
             } else {
                 MusicLibraryPane(
@@ -256,12 +272,14 @@ fun PlayerScreen(
                     onRequestAudioPerm = { audioPermLauncher.launch(audioPermission) },
                     onOpenAppSettings = { context.openAppDetailsSettings() },
                     onPickAudioFiles = { audioFilePicker.launch(arrayOf("audio/*")) },
+                    onRefresh = viewModel::refreshLibraries,
                     onSelectTab = viewModel::selectMusicTab,
                     onPlaySongList = { list, index -> viewModel.playMusicQueue(list, index) },
                     onToggleFavorite = viewModel::toggleFavorite,
                     onAddToPlaylist = { addToPlaylistItem = it },
                     onEditMetadata = { editMetadataItem = it },
-                    onCreatePlaylist = { showCreatePlaylistDialog = true }
+                    onCreatePlaylist = { showCreatePlaylistDialog = true },
+                    onOpenPlaylist = { activePlaylistDetail = it }
                 )
             }
         }
@@ -287,6 +305,14 @@ fun PlayerScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
+                            playbackUi.currentAlbumArtUri?.let { art ->
+                                AsyncImage(
+                                    model = Uri.parse(art),
+                                    contentDescription = playbackUi.currentTitle,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -345,6 +371,14 @@ fun PlayerScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Rounded.Album, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(80.dp))
+                    playbackUi.currentAlbumArtUri?.let { art ->
+                        AsyncImage(
+                            model = Uri.parse(art),
+                            contentDescription = playbackUi.currentTitle,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(14.dp))
@@ -658,6 +692,75 @@ fun PlayerScreen(
             }
         )
     }
+    // Playlist Detail Dialog (Video & Music playlists)
+    activePlaylistDetail?.let { pl ->
+        val items by viewModel.observePlaylistItems(pl.id).collectAsStateWithLifecycle(emptyList())
+        AlertDialog(
+            onDismissRequest = { activePlaylistDetail = null },
+            title = { Text(pl.name) },
+            text = {
+                if (items.isEmpty()) {
+                    Text(stringResource(R.string.player_playlist_empty), style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    LazyColumn(modifier = Modifier.height(260.dp)) {
+                        itemsIndexed(items, key = { _, entry -> entry.id }) { idx, entry ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (pl.mediaCategory == "VIDEO") {
+                                            activePlaylistDetail = null
+                                            onOpenVideoPlayer(entry.mediaUri, entry.title)
+                                        } else {
+                                            val queue = items.map { plItem ->
+                                                songs.firstOrNull { it.uriString == plItem.mediaUri } ?: DeviceMediaItem(
+                                                    id = plItem.mediaUri,
+                                                    uriString = plItem.mediaUri,
+                                                    title = plItem.title,
+                                                    fileName = plItem.title,
+                                                    folderName = plItem.artistOrFolder,
+                                                    artist = plItem.artistOrFolder,
+                                                    durationMs = plItem.durationMs
+                                                )
+                                            }
+                                            viewModel.playMusicQueue(queue, idx)
+                                            activePlaylistDetail = null
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(entry.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        "${entry.artistOrFolder} • ${FormatUtils.formatDuration(entry.durationMs)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.removePlaylistItem(entry.id) }) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.vp_remove), tint = tokens.danger)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.deletePlaylist(pl.id)
+                    activePlaylistDetail = null
+                }) {
+                    Text(stringResource(R.string.player_delete_playlist), color = tokens.danger)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { activePlaylistDetail = null }) { Text(stringResource(R.string.btn_close)) }
+            }
+        )
+    }
 }
 
 @Composable
@@ -666,18 +769,35 @@ private fun VideoLibraryPane(
     selectedTab: VideoSubTab,
     playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
     onSelectTab: (VideoSubTab) -> Unit,
+    onRefresh: () -> Unit,
     onPickVideos: () -> Unit,
     onPickVideoFolder: () -> Unit,
     onPlayVideo: (DeviceMediaItem) -> Unit,
     onToggleFavorite: (DeviceMediaItem) -> Unit,
     onAddToPlaylist: (DeviceMediaItem) -> Unit,
-    onCreatePlaylist: () -> Unit
+    onCreatePlaylist: () -> Unit,
+    onOpenPlaylist: (com.tkofficial.videodownloder.database.PlaylistEntity) -> Unit
 ) {
     val tokens = LocalVaTokens.current
-    val filtered = remember(videos, selectedTab) {
+    var selectedFolderName by remember(selectedTab) { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = selectedTab == VideoSubTab.FOLDERS && selectedFolderName != null) {
+        selectedFolderName = null
+    }
+
+    val folderGroups = remember(videos) {
+        videos.groupBy { it.folderName.ifBlank { "Local Folder" } }
+            .entries
+            .sortedBy { it.key.lowercase() }
+            .map { it.key to it.value }
+    }
+
+    val filtered = remember(videos, selectedTab, selectedFolderName) {
         when (selectedTab) {
             VideoSubTab.ALL -> videos
-            VideoSubTab.FOLDERS -> videos.sortedBy { it.folderName }
+            VideoSubTab.FOLDERS -> selectedFolderName?.let { folder ->
+                videos.filter { it.folderName.ifBlank { "Local Folder" } == folder }
+            } ?: emptyList()
             VideoSubTab.RECENT -> videos.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
             VideoSubTab.FAVORITES -> videos.filter { it.isFavorite }
             VideoSubTab.DOWNLOADED -> videos.filter { it.isDownloadedByApp }
@@ -689,7 +809,8 @@ private fun VideoLibraryPane(
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(onClick = onPickVideos, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
@@ -700,6 +821,9 @@ private fun VideoLibraryPane(
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.player_add_folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
             }
         }
 
@@ -733,7 +857,82 @@ private fun VideoLibraryPane(
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(playlists, key = { it.id }) { pl ->
-                    VaCard { Text(pl.name, style = MaterialTheme.typography.titleMedium) }
+                    VaCard(onClick = { onOpenPlaylist(pl) }, modifier = Modifier.animateItem()) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(pl.name, style = MaterialTheme.typography.titleMedium)
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = tokens.primaryAccent)
+                        }
+                    }
+                }
+            }
+        } else if (selectedTab == VideoSubTab.FOLDERS) {
+            AnimatedContent(
+                targetState = selectedFolderName,
+                transitionSpec = {
+                    if (tokens.reduceMotion) {
+                        fadeIn() togetherWith fadeOut()
+                    } else if (targetState != null) {
+                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                    }
+                },
+                label = "video_folder_transition"
+            ) { folder ->
+                if (folder == null) {
+                    if (folderGroups.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                stringResource(R.string.player_no_videos_found),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(folderGroups, key = { it.first }) { (folderTitle, itemsInFolder) ->
+                                VaFolderCard(
+                                    title = folderTitle,
+                                    subtitle = stringResource(R.string.player_folder_items_count, itemsInFolder.size),
+                                    icon = Icons.Rounded.Folder,
+                                    onClick = { selectedFolderName = folderTitle },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            TextButton(onClick = { selectedFolderName = null }) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.player_all_folders_back))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = folder,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(filtered, key = { it.id }) { item ->
+                                VideoListItemCard(
+                                    item = item,
+                                    onPlay = { onPlayVideo(item) },
+                                    onToggleFavorite = { onToggleFavorite(item) },
+                                    onAddToPlaylist = { onAddToPlaylist(item) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    }
                 }
             }
         } else if (filtered.isEmpty()) {
@@ -747,39 +946,57 @@ private fun VideoLibraryPane(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filtered, key = { it.id }) { item ->
-                    VaCard(onClick = { onPlayVideo(item) }, contentPadding = PaddingValues(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AsyncImage(
-                                model = Uri.parse(item.uriString),
-                                contentDescription = item.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val res = if (item.width > 0 && item.height > 0) "${item.width}×${item.height} • " else ""
-                                Text(
-                                    "$res${FormatUtils.formatDuration(item.durationMs)} • ${FormatUtils.formatBytes(item.sizeBytes)} • ${item.folderName}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(onClick = { onToggleFavorite(item) }) {
-                                Icon(
-                                    if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = stringResource(R.string.gallery_favorite),
-                                    tint = if (item.isFavorite) tokens.danger else tokens.iconTint
-                                )
-                            }
-                            IconButton(onClick = { onAddToPlaylist(item) }) {
-                                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
-                            }
-                        }
-                    }
+                    VideoListItemCard(
+                        item = item,
+                        onPlay = { onPlayVideo(item) },
+                        onToggleFavorite = { onToggleFavorite(item) },
+                        onAddToPlaylist = { onAddToPlaylist(item) },
+                        modifier = Modifier.animateItem()
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoListItemCard(
+    item: DeviceMediaItem,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tokens = LocalVaTokens.current
+    VaCard(onClick = onPlay, contentPadding = PaddingValues(10.dp), modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = Uri.parse(item.uriString),
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val res = if (item.width > 0 && item.height > 0) "${item.width}×${item.height} • " else ""
+                Text(
+                    "$res${FormatUtils.formatDuration(item.durationMs)} • ${FormatUtils.formatBytes(item.sizeBytes)} • ${item.folderName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = stringResource(R.string.gallery_favorite),
+                    tint = if (item.isFavorite) tokens.danger else tokens.iconTint
+                )
+            }
+            IconButton(onClick = onAddToPlaylist) {
+                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
     }
@@ -795,20 +1012,44 @@ private fun MusicLibraryPane(
     onRequestAudioPerm: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onPickAudioFiles: () -> Unit,
+    onRefresh: () -> Unit,
     onSelectTab: (MusicSubTab) -> Unit,
     onPlaySongList: (List<DeviceMediaItem>, Int) -> Unit,
     onToggleFavorite: (DeviceMediaItem) -> Unit,
     onAddToPlaylist: (DeviceMediaItem) -> Unit,
     onEditMetadata: (DeviceMediaItem) -> Unit,
-    onCreatePlaylist: () -> Unit
+    onCreatePlaylist: () -> Unit,
+    onOpenPlaylist: (com.tkofficial.videodownloder.database.PlaylistEntity) -> Unit
 ) {
     val tokens = LocalVaTokens.current
-    val filtered = remember(songs, selectedTab) {
+    val isGroupedTab = selectedTab in setOf(MusicSubTab.ALBUMS, MusicSubTab.ARTISTS, MusicSubTab.FOLDERS)
+    var selectedGroupKey by remember(selectedTab) { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = isGroupedTab && selectedGroupKey != null) {
+        selectedGroupKey = null
+    }
+
+    val groupedEntries = remember(songs, selectedTab) {
+        when (selectedTab) {
+            MusicSubTab.ALBUMS -> songs.groupBy { it.album.ifBlank { "Unknown Album" } }
+            MusicSubTab.ARTISTS -> songs.groupBy { it.artist.ifBlank { "Unknown Artist" } }
+            MusicSubTab.FOLDERS -> songs.groupBy { it.folderName.ifBlank { "Music" } }
+            else -> emptyMap()
+        }.entries.sortedBy { it.key.lowercase() }.map { it.key to it.value }
+    }
+
+    val filtered = remember(songs, selectedTab, selectedGroupKey) {
         when (selectedTab) {
             MusicSubTab.ALL_SONGS -> songs
-            MusicSubTab.ALBUMS -> songs.sortedBy { it.album }
-            MusicSubTab.ARTISTS -> songs.sortedBy { it.artist }
-            MusicSubTab.FOLDERS -> songs.sortedBy { it.folderName }
+            MusicSubTab.ALBUMS -> selectedGroupKey?.let { grp ->
+                songs.filter { it.album.ifBlank { "Unknown Album" } == grp }
+            } ?: emptyList()
+            MusicSubTab.ARTISTS -> selectedGroupKey?.let { grp ->
+                songs.filter { it.artist.ifBlank { "Unknown Artist" } == grp }
+            } ?: emptyList()
+            MusicSubTab.FOLDERS -> selectedGroupKey?.let { grp ->
+                songs.filter { it.folderName.ifBlank { "Music" } == grp }
+            } ?: emptyList()
             MusicSubTab.FAVORITES -> songs.filter { it.isFavorite }
             MusicSubTab.RECENT -> songs.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
             MusicSubTab.MOST_PLAYED -> songs.filter { it.playCount > 0 }.sortedByDescending { it.playCount }
@@ -833,10 +1074,19 @@ private fun MusicLibraryPane(
             }
             Spacer(Modifier.height(8.dp))
         } else {
-            OutlinedButton(onClick = onPickAudioFiles, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Rounded.AudioFile, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.player_import_audio))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onPickAudioFiles, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.AudioFile, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.player_import_audio), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -882,7 +1132,85 @@ private fun MusicLibraryPane(
                     }
                 }
                 items(playlists, key = { it.id }) { pl ->
-                    VaCard { Text(pl.name, style = MaterialTheme.typography.titleMedium) }
+                    VaCard(onClick = { onOpenPlaylist(pl) }, modifier = Modifier.animateItem()) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(pl.name, style = MaterialTheme.typography.titleMedium)
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = tokens.primaryAccent)
+                        }
+                    }
+                }
+            }
+        } else if (isGroupedTab) {
+            val groupIcon = when (selectedTab) {
+                MusicSubTab.ALBUMS -> Icons.Rounded.Album
+                MusicSubTab.ARTISTS -> Icons.Rounded.Person
+                else -> Icons.Rounded.Folder
+            }
+            AnimatedContent(
+                targetState = selectedGroupKey,
+                transitionSpec = {
+                    if (tokens.reduceMotion) {
+                        fadeIn() togetherWith fadeOut()
+                    } else if (targetState != null) {
+                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                    }
+                },
+                label = "music_group_transition"
+            ) { group ->
+                if (group == null) {
+                    if (groupedEntries.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.player_no_songs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(groupedEntries, key = { it.first }) { (groupTitle, tracks) ->
+                                VaFolderCard(
+                                    title = groupTitle,
+                                    subtitle = stringResource(R.string.player_folder_items_count, tracks.size),
+                                    icon = groupIcon,
+                                    onClick = { selectedGroupKey = groupTitle },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            TextButton(onClick = { selectedGroupKey = null }) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.player_all_folders_back))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = group,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(filtered, key = { _, item -> item.id }) { index, song ->
+                                MusicTrackCard(
+                                    song = song,
+                                    isPlaying = song.uriString == currentPlayingUri,
+                                    onClick = { onPlaySongList(filtered, index) },
+                                    onToggleFavorite = { onToggleFavorite(song) },
+                                    onEditMetadata = { onEditMetadata(song) },
+                                    onAddToPlaylist = { onAddToPlaylist(song) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    }
                 }
             }
         } else if (filtered.isEmpty()) {
@@ -892,46 +1220,79 @@ private fun MusicLibraryPane(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(filtered, key = { _, item -> item.id }) { index, song ->
-                    val isPlayingThis = song.uriString == currentPlayingUri
-                    VaCard(
+                    MusicTrackCard(
+                        song = song,
+                        isPlaying = song.uriString == currentPlayingUri,
                         onClick = { onPlaySongList(filtered, index) },
-                        highlighted = isPlayingThis,
-                        contentPadding = PaddingValues(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AsyncImage(
-                                model = song.albumArtUri?.let { Uri.parse(it) },
-                                contentDescription = song.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(song.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    "${song.artist} • ${song.album} • ${FormatUtils.formatDuration(song.durationMs)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(onClick = { onToggleFavorite(song) }) {
-                                Icon(
-                                    if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = stringResource(R.string.gallery_favorite),
-                                    tint = if (song.isFavorite) tokens.danger else tokens.iconTint
-                                )
-                            }
-                            IconButton(onClick = { onEditMetadata(song) }) {
-                                Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
-                            }
-                            IconButton(onClick = { onAddToPlaylist(song) }) {
-                                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
-                            }
-                        }
-                    }
+                        onToggleFavorite = { onToggleFavorite(song) },
+                        onEditMetadata = { onEditMetadata(song) },
+                        onAddToPlaylist = { onAddToPlaylist(song) },
+                        modifier = Modifier.animateItem()
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicTrackCard(
+    song: DeviceMediaItem,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onEditMetadata: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tokens = LocalVaTokens.current
+    VaCard(
+        onClick = onClick,
+        highlighted = isPlaying,
+        contentPadding = PaddingValues(10.dp),
+        modifier = modifier
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(tokens.elevatedSurface),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
+                song.albumArtUri?.let { art ->
+                    AsyncImage(
+                        model = Uri.parse(art),
+                        contentDescription = song.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(song.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "${song.artist} • ${song.album} • ${FormatUtils.formatDuration(song.durationMs)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = stringResource(R.string.gallery_favorite),
+                    tint = if (song.isFavorite) tokens.danger else tokens.iconTint
+                )
+            }
+            IconButton(onClick = onEditMetadata) {
+                Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
+            }
+            IconButton(onClick = onAddToPlaylist) {
+                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
     }

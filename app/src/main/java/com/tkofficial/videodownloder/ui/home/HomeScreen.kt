@@ -103,6 +103,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
@@ -599,26 +600,28 @@ fun HomeScreen(
             }
         } else {
             items(rawList, key = { it.id }) { item ->
-                DownloadItemCard(
-                    item = item,
-                    onPause = { viewModel.pauseDownload(item.id) },
-                    onResume = { viewModel.resumeDownload(item.id) },
-                    onCancel = { viewModel.cancelDownload(item.id) },
-                    onRetry = { viewModel.retryDownload(item.id) },
-                    onRename = { renameTarget = item },
-                    onDelete = { deleteTarget = item },
-                    onShare = { viewModel.shareDownload(item) },
-                    onOpen = {
-                        if (item.mediaType == MediaCategory.VIDEO.name && File(item.localPath).exists()) {
-                            onPlayVideo(android.net.Uri.fromFile(File(item.localPath)).toString(), item.title)
-                        } else {
-                            viewModel.openExternal(item)
-                        }
-                    },
-                    onDetails = { detailsTarget = item },
-                    onMoveUp = { viewModel.movePriority(item.id, 1) },
-                    onMoveDown = { viewModel.movePriority(item.id, -1) }
-                )
+                Box(modifier = Modifier.animateItem()) {
+                    DownloadItemCard(
+                        item = item,
+                        onPause = { viewModel.pauseDownload(item.id) },
+                        onResume = { viewModel.resumeDownload(item.id) },
+                        onCancel = { viewModel.cancelDownload(item.id) },
+                        onRetry = { viewModel.retryDownload(item.id) },
+                        onRename = { renameTarget = item },
+                        onDelete = { deleteTarget = item },
+                        onShare = { viewModel.shareDownload(item) },
+                        onOpen = {
+                            if (item.mediaType == MediaCategory.VIDEO.name && File(item.localPath).exists()) {
+                                onPlayVideo(android.net.Uri.fromFile(File(item.localPath)).toString(), item.title)
+                            } else {
+                                viewModel.openExternal(item)
+                            }
+                        },
+                        onDetails = { detailsTarget = item },
+                        onMoveUp = { viewModel.movePriority(item.id, 1) },
+                        onMoveDown = { viewModel.movePriority(item.id, -1) }
+                    )
+                }
             }
         }
 
@@ -873,8 +876,15 @@ private fun DownloadItemCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (item.status == "COMPLETED" && item.mediaType in setOf("IMAGE", "VIDEO")) {
+                    val itemContext = LocalContext.current
+                    val thumbModel = remember(item.localPath, item.id) {
+                        ImageRequest.Builder(itemContext)
+                            .data(File(item.localPath))
+                            .size(240)
+                            .build()
+                    }
                     AsyncImage(
-                        model = File(item.localPath),
+                        model = thumbModel,
                         contentDescription = item.fileName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

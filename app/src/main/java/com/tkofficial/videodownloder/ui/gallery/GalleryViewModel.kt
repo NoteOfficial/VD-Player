@@ -214,7 +214,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             val safeFileName = FormatUtils.sanitizeFileName(clean, ext)
             val newFile = File(oldFile.parentFile ?: FormatUtils.getAppMediaRoot(app), safeFileName)
             if (oldFile.exists()) oldFile.renameTo(newFile)
-            galleryDao.renameMedia(item.id, clean, newFile.name, newFile.absolutePath)
+            val newUri = runCatching {
+                FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", newFile).toString()
+            }.getOrDefault(item.contentUri)
+            galleryDao.renameMedia(item.id, clean, newFile.name, newFile.absolutePath, newUri)
             _statusMessage.value = locString(R.string.msg_renamed_to, newFile.name)
         }
     }

@@ -11,6 +11,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.security.DigestOutputStream
+import java.security.MessageDigest
 import java.util.UUID
 
 class VaultRepository(
@@ -22,8 +27,6 @@ class VaultRepository(
 
     suspend fun importUriToVault(uri: Uri): Result<VaultMetadataEntity> = withContext(Dispatchers.IO) {
         runCatching {
-            val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("Unable to read selected file.")
             val originalName = FormatUtils.getFileNameFromUri(context, uri)
             val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
             val mediaType = when {
@@ -31,40 +34,52 @@ class VaultRepository(
                 mime.startsWith("image/") -> "PHOTO"
                 else -> "DOCUMENT"
             }
-            encryptAndSave(rawBytes, originalName, mediaType, mime)
+            val stream = context.contentResolver.openInputStream(uri)
+                ?: error("Unable to read selected file.")
+            stream.use { input ->
+                encryptStreamAndSave(input, originalName, mediaType, mime)
+            }
         }
     }
 
     suspend fun importLocalFileToVault(file: File, mediaType: String, mimeType: String, deleteSource: Boolean): Result<VaultMetadataEntity> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val rawBytes = file.readBytes()
-                val saved = encryptAndSave(rawBytes, file.name, mediaType, mimeType)
+                val saved = FileInputStream(file).use { input ->
+                    encryptStreamAndSave(input, file.name, mediaType, mimeType)
+                }
                 if (deleteSource) file.delete()
                 saved
             }
         }
 
-    private suspend fun encryptAndSave(
-        rawBytes: ByteArray,
+    private suspend fun encryptStreamAndSave(
+        input: InputStream,
         originalName: String,
         mediaType: String,
         mime: String
     ): VaultMetadataEntity {
-        val (iv, cipherText) = securityManager.encryptVaultBytes(rawBytes)
-        val sha256 = FormatUtils.computeBytesSha256(cipherText)
         val encryptedName = "${UUID.randomUUID()}.vlt"
         val vaultFile = File(FormatUtils.getVaultDir(context), encryptedName)
-        vaultFile.writeBytes(cipherText)
+        val digest = MessageDigest.getInstance("SHA-256")
+        val (iv, originalSize) = try {
+            DigestOutputStream(FileOutputStream(vaultFile), digest).use { dos ->
+                securityManager.encryptVaultStream(input, dos)
+            }
+        } catch (t: Throwable) {
+            vaultFile.delete()
+            throw t
+        }
 
+        val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
         val ivHex = iv.joinToString("") { "%02x".format(it) }
         val meta = VaultMetadataEntity(
             originalName = originalName,
             encryptedFileName = encryptedName,
             mediaType = mediaType,
             mimeType = mime,
-            originalSizeBytes = rawBytes.size.toLong(),
-            encryptedSizeBytes = cipherText.size.toLong(),
+            originalSizeBytes = originalSize,
+            encryptedSizeBytes = vaultFile.length(),
             sha256Checksum = sha256,
             ivHex = ivHex
         )
@@ -79,13 +94,7 @@ class VaultRepository(
             val cipherBytes = file.readBytes()
             val actualHash = FormatUtils.computeBytesSha256(cipherBytes)
             if (actualHash != item.sha256Checksum) {
-                systemDao.insertNotification(
-                    AppNotificationEntity(
-                        category = "SECURITY",
-                        title = "Vault Integrity Mismatch",
-                        message = "Checksum mismatch detected for ${item.originalName}"
-                    )
-                )
+                recordIntegrityMismatch(item)
                 error("Vault integrity check failed (SHA-256 mismatch).")
             }
             val iv = item.ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
@@ -93,12 +102,51 @@ class VaultRepository(
         }
     }
 
+    suspend fun decryptVaultToFile(item: VaultMetadataEntity, destFile: File): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            val file = File(FormatUtils.getVaultDir(context), item.encryptedFileName)
+            if (!file.exists()) error("Encrypted vault blob missing.")
+            val actualHash = FormatUtils.computeFileHash(file, "SHA-256")
+            if (actualHash != item.sha256Checksum) {
+                recordIntegrityMismatch(item)
+                error("Vault integrity check failed (SHA-256 mismatch).")
+            }
+            val iv = item.ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            try {
+                FileInputStream(file).use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        securityManager.decryptVaultStream(iv, input, output)
+                    }
+                }
+            } catch (t: Throwable) {
+                destFile.delete()
+                throw t
+            }
+            destFile
+        }
+    }
+
+    private suspend fun recordIntegrityMismatch(item: VaultMetadataEntity) {
+        systemDao.insertNotification(
+            AppNotificationEntity(
+                category = "SECURITY",
+                title = "Vault Integrity Mismatch",
+                message = "Checksum mismatch detected for ${item.originalName}"
+            )
+        )
+    }
+
     suspend fun verifyAllVaultIntegrity(): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val dir = FormatUtils.getVaultDir(context)
-        val files = dir.listFiles()?.filter { it.extension == "vlt" } ?: emptyList()
+        val items = systemDao.getVaultItemsOnce()
+        val vaultDir = FormatUtils.getVaultDir(context)
         var valid = 0
-        val total = files.size
-        files.forEach { if (it.length() > 16) valid++ }
+        val total = items.size
+        items.forEach { item ->
+            val file = File(vaultDir, item.encryptedFileName)
+            if (file.exists() && file.length() > 16L && FormatUtils.computeFileHash(file, "SHA-256") == item.sha256Checksum) {
+                valid++
+            }
+        }
         valid to total
     }
 
@@ -107,3 +155,4 @@ class VaultRepository(
         systemDao.deleteVaultItem(item.id)
     }
 }
+

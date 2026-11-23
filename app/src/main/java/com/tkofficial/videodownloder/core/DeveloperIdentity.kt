@@ -15,8 +15,8 @@ object DeveloperIdentity {
 
     const val DEVELOPER_NAME = "Mr TK"
     const val DEVELOPER_PROFILE_TAG = "＞━╬٨-ﮩﮩT♡ᴋ٨ـﮩﮩـ╬━＜"
-    const val TELEGRAM_HANDLE = "@tkParsonalChatBot"
-    const val TELEGRAM_URL = "https://t.me/tkParsonalChatBot"
+    const val TELEGRAM_HANDLE = "@MR_TK_68"
+    const val TELEGRAM_URL = "https://t.me/MR_TK_68"
     const val DEVELOPER_EMAIL = "tkofficial68@gmail.com"
 
     @DrawableRes

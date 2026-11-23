@@ -1,9 +1,15 @@
 package com.tkofficial.videodownloder.ui.player
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.drawable.Icon as AndroidIcon
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -18,6 +24,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -30,6 +37,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,6 +93,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -137,11 +146,11 @@ fun VideoPlayerScreen(
     val scope = rememberCoroutineScope()
 
     val settings by playerViewModel.settings.collectAsStateWithLifecycle()
-    val bookmarks by playerViewModel.observeVideoBookmarks(mediaUri).collectAsStateWithLifecycle(emptyList())
     val videos by playerViewModel.videos.collectAsStateWithLifecycle()
 
     var currentUri by remember { mutableStateOf(mediaUri) }
     var currentTitle by remember { mutableStateOf(title) }
+    val bookmarks by playerViewModel.observeVideoBookmarks(currentUri).collectAsStateWithLifecycle(emptyList())
     var isPlaying by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -149,6 +158,8 @@ fun VideoPlayerScreen(
     var isLocked by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(settings.videoDefaultSpeed) }
     var aspectMode by remember { mutableStateOf(settings.videoDefaultAspectRatio) }
+    var hasUserChangedSpeed by remember { mutableStateOf(false) }
+    var hasUserChangedAspect by remember { mutableStateOf(false) }
     var zoomScale by remember { mutableFloatStateOf(1f) }
     var abRepeatA by remember { mutableStateOf<Long?>(null) }
     var abRepeatB by remember { mutableStateOf<Long?>(null) }
@@ -171,8 +182,27 @@ fun VideoPlayerScreen(
         ExoPlayer.Builder(context, rf).build()
     }
 
+    LaunchedEffect(settings.videoDefaultSpeed) {
+        if (!hasUserChangedSpeed) {
+            playbackSpeed = settings.videoDefaultSpeed
+            exoPlayer.setPlaybackSpeed(settings.videoDefaultSpeed)
+        }
+    }
+
+    LaunchedEffect(settings.videoDefaultAspectRatio) {
+        if (!hasUserChangedAspect) {
+            aspectMode = settings.videoDefaultAspectRatio
+        }
+    }
+
     val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             subtitleUri = uri
         }
     }
@@ -181,8 +211,14 @@ fun VideoPlayerScreen(
     LaunchedEffect(currentUri, subtitleUri) {
         val builder = MediaItem.Builder().setUri(currentUri)
         subtitleUri?.let { sub ->
+            val subPath = (FormatUtils.getFileNameFromUri(context, sub) + " " + sub.toString()).lowercase()
+            val subMime = when {
+                subPath.contains(".vtt") -> MimeTypes.TEXT_VTT
+                subPath.contains(".ass") || subPath.contains(".ssa") -> MimeTypes.TEXT_SSA
+                else -> MimeTypes.APPLICATION_SUBRIP
+            }
             val subConfig = MediaItem.SubtitleConfiguration.Builder(sub)
-                .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+                .setMimeType(subMime)
                 .setLanguage("en")
                 .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                 .build()
@@ -255,6 +291,43 @@ fun VideoPlayerScreen(
         }
     }
 
+    // PiP RemoteAction transport controls (Play/Pause, Rewind 10s, Forward 10s)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+        DisposableEffect(exoPlayer) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context?, intent: Intent?) {
+                    when (intent?.getStringExtra(PIP_EXTRA_COMMAND)) {
+                        PIP_CMD_REW -> exoPlayer.seekTo((exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L))
+                        PIP_CMD_PLAY_PAUSE -> if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        PIP_CMD_FWD -> {
+                            val dur = exoPlayer.duration
+                            val rawNext = exoPlayer.currentPosition + 10_000L
+                            exoPlayer.seekTo(if (dur > 0L) rawNext.coerceAtMost(dur) else rawNext)
+                        }
+                    }
+                }
+            }
+            val filter = IntentFilter(PIP_CONTROL_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            }
+            onDispose {
+                runCatching { context.unregisterReceiver(receiver) }
+            }
+        }
+
+        LaunchedEffect(isInPipMode, isPlaying) {
+            if (isInPipMode) {
+                runCatching {
+                    activity.setPictureInPictureParams(buildPipParams(context, isPlaying))
+                }
+            }
+        }
+    }
+
     BackHandler { onBack() }
 
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -272,7 +345,10 @@ fun VideoPlayerScreen(
                             exoPlayer.seekTo((exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L))
                             gestureBanner = "-10s"
                         } else {
-                            exoPlayer.seekTo((exoPlayer.currentPosition + 10_000L).coerceAtMost(exoPlayer.duration.coerceAtLeast(0L)))
+                            val dur = exoPlayer.duration
+                            val rawNext = exoPlayer.currentPosition + 10_000L
+                            val target = if (dur > 0L) rawNext.coerceAtMost(dur) else rawNext
+                            exoPlayer.seekTo(target)
                             gestureBanner = "+10s"
                         }
                     }
@@ -289,7 +365,9 @@ fun VideoPlayerScreen(
                 if (!isLocked) {
                     detectHorizontalDragGestures { _, dragAmount ->
                         val deltaMs = (dragAmount * 120f * settings.videoGestureSensitivity).toLong()
-                        val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, exoPlayer.duration.coerceAtLeast(1L))
+                        val dur = exoPlayer.duration
+                        val rawTarget = (exoPlayer.currentPosition + deltaMs).coerceAtLeast(0L)
+                        val target = if (dur > 0L) rawTarget.coerceAtMost(dur) else rawTarget
                         exoPlayer.seekTo(target)
                         gestureBanner = FormatUtils.formatDuration(target)
                     }
@@ -327,6 +405,18 @@ fun VideoPlayerScreen(
             }
         }
 
+        val viewportModifier = when (aspectMode) {
+            AspectRatioMode.RATIO_16_9 -> Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+            AspectRatioMode.RATIO_4_3 -> Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .aspectRatio(4f / 3f)
+            else -> Modifier.fillMaxSize()
+        }
+
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -339,10 +429,10 @@ fun VideoPlayerScreen(
                     subtitleView?.setStyle(
                         CaptionStyleCompat(
                             settings.videoSubtitleColorHex.toInt(),
-                            Color.Black.copy(alpha = settings.videoSubtitleBgAlpha).hashCode(),
-                            Color.Transparent.hashCode(),
+                            Color.Black.copy(alpha = settings.videoSubtitleBgAlpha).toArgb(),
+                            Color.Transparent.toArgb(),
                             CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                            Color.Black.hashCode(),
+                            Color.Black.toArgb(),
                             null
                         )
                     )
@@ -352,17 +442,25 @@ fun VideoPlayerScreen(
             },
             update = { view ->
                 view.player = exoPlayer
+                view.subtitleView?.setStyle(
+                    CaptionStyleCompat(
+                        settings.videoSubtitleColorHex.toInt(),
+                        Color.Black.copy(alpha = settings.videoSubtitleBgAlpha).toArgb(),
+                        Color.Transparent.toArgb(),
+                        CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                        Color.Black.toArgb(),
+                        null
+                    )
+                )
+                view.subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, settings.videoSubtitleFontSp)
                 view.resizeMode = when (aspectMode) {
                     AspectRatioMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                     AspectRatioMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     AspectRatioMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    AspectRatioMode.RATIO_16_9 -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
-                    AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT
+                    AspectRatioMode.RATIO_16_9, AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                 }
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(scaleX = zoomScale, scaleY = zoomScale)
+            modifier = viewportModifier.graphicsLayer(scaleX = zoomScale, scaleY = zoomScale)
         )
 
         // Gesture Feedback Chip
@@ -435,10 +533,7 @@ fun VideoPlayerScreen(
                             // Picture-in-Picture
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
                                 IconButton(onClick = {
-                                    val params = PictureInPictureParams.Builder()
-                                        .setAspectRatio(Rational(16, 9))
-                                        .build()
-                                    activity.enterPictureInPictureMode(params)
+                                    activity.enterPictureInPictureMode(buildPipParams(context, isPlaying))
                                 }) {
                                     Icon(Icons.Rounded.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White)
                                 }
@@ -465,7 +560,11 @@ fun VideoPlayerScreen(
                                     modifier = Modifier.size(38.dp)
                                 )
                             }
-                            IconButton(onClick = { exoPlayer.seekTo((exoPlayer.currentPosition + 10_000L).coerceAtMost(durationMs.coerceAtLeast(0L))) }) {
+                            IconButton(onClick = {
+                                val rawNext = exoPlayer.currentPosition + 10_000L
+                                val target = if (durationMs > 0L) rawNext.coerceAtMost(durationMs) else rawNext
+                                exoPlayer.seekTo(target)
+                            }) {
                                 Icon(Icons.Rounded.FastForward, contentDescription = stringResource(R.string.vp_forward_10s), tint = Color.White, modifier = Modifier.size(34.dp))
                             }
                         }
@@ -506,6 +605,7 @@ fun VideoPlayerScreen(
                                     Icon(Icons.Rounded.ScreenRotation, contentDescription = stringResource(R.string.vp_rotate), tint = Color.White)
                                 }
                                 IconButton(onClick = {
+                                    hasUserChangedAspect = true
                                     val modes = AspectRatioMode.entries
                                     aspectMode = modes[(aspectMode.ordinal + 1) % modes.size]
                                     val label = aspectMode.labelRes?.let { context.getString(it) } ?: aspectMode.label
@@ -549,7 +649,9 @@ fun VideoPlayerScreen(
                                 // Frame-by-frame step (+33ms)
                                 IconButton(onClick = {
                                     exoPlayer.pause()
-                                    exoPlayer.seekTo((exoPlayer.currentPosition + 33L).coerceAtMost(durationMs))
+                                    val rawNext = exoPlayer.currentPosition + 33L
+                                    val target = if (durationMs > 0L) rawNext.coerceAtMost(durationMs) else rawNext
+                                    exoPlayer.seekTo(target)
                                     gestureBanner = context.getString(R.string.vp_next_frame_banner)
                                 }) {
                                     Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.vp_next_frame), tint = Color.White)
@@ -584,6 +686,7 @@ fun VideoPlayerScreen(
                             FilterChip(
                                 selected = playbackSpeed == spd,
                                 onClick = {
+                                    hasUserChangedSpeed = true
                                     playbackSpeed = spd
                                     exoPlayer.setPlaybackSpeed(spd)
                                 },
@@ -608,6 +711,18 @@ fun VideoPlayerScreen(
                     if (groups.isEmpty()) {
                         Text(stringResource(R.string.vp_tracks_empty))
                     } else {
+                        OutlinedButton(
+                            onClick = {
+                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                    .buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                    .build()
+                                showTracksDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.vp_subtitles_off))
+                        }
                         groups.forEachIndexed { idx, group ->
                             if (group.type == C.TRACK_TYPE_AUDIO || group.type == C.TRACK_TYPE_TEXT) {
                                 val format = group.getTrackFormat(0)
@@ -621,6 +736,7 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                                             .buildUpon()
+                                            .setTrackTypeDisabled(group.type, false)
                                             .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
                                             .build()
                                         showTracksDialog = false
@@ -730,3 +846,42 @@ private fun captureVideoScreenshot(
         Handler(Looper.getMainLooper())
     )
 }
+
+private const val PIP_CONTROL_ACTION = "com.tkofficial.videodownloder.PIP_CONTROL"
+private const val PIP_EXTRA_COMMAND = "pip_cmd"
+private const val PIP_CMD_REW = "rew"
+private const val PIP_CMD_PLAY_PAUSE = "play_pause"
+private const val PIP_CMD_FWD = "fwd"
+
+@RequiresApi(Build.VERSION_CODES.O)
+private fun buildPipParams(context: Context, isPlaying: Boolean): PictureInPictureParams {
+    fun createRemoteAction(requestCode: Int, cmd: String, iconRes: Int, title: String): RemoteAction {
+        val intent = Intent(PIP_CONTROL_ACTION).apply {
+            setPackage(context.packageName)
+            putExtra(PIP_EXTRA_COMMAND, cmd)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return RemoteAction(AndroidIcon.createWithResource(context, iconRes), title, title, pi)
+    }
+
+    val actions = listOf(
+        createRemoteAction(101, PIP_CMD_REW, android.R.drawable.ic_media_rew, context.getString(R.string.vp_rewind_10s)),
+        createRemoteAction(
+            102,
+            PIP_CMD_PLAY_PAUSE,
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            context.getString(R.string.player_play_pause)
+        ),
+        createRemoteAction(103, PIP_CMD_FWD, android.R.drawable.ic_media_ff, context.getString(R.string.vp_forward_10s))
+    )
+    return PictureInPictureParams.Builder()
+        .setAspectRatio(Rational(16, 9))
+        .setActions(actions)
+        .build()
+}
+

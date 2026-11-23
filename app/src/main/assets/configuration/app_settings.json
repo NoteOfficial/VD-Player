@@ -1,0 +1,13 @@
+{
+  "media_service": {
+    "enabled": false,
+    "status": "not_configured",
+    "primary_endpoint": "",
+    "secondary_endpoint": "",
+    "backup_endpoint": "",
+    "api_version": "v1",
+    "request_timeout_seconds": 30,
+    "connect_timeout_seconds": 15,
+    "retry_limit": 2
+  }
+}

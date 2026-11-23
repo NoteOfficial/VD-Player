@@ -120,6 +120,7 @@ fun MediaStudioScreen(
     // Video/Audio trim controls (seconds)
     var trimStartSec by remember { mutableStateOf("0") }
     var trimEndSec by remember { mutableStateOf("10") }
+    var trimValidationError by remember { mutableStateOf<String?>(null) }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
@@ -292,10 +293,27 @@ fun MediaStudioScreen(
                             if (selectedUri != null) {
                                 Spacer(Modifier.height(10.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(value = trimStartSec, onValueChange = { trimStartSec = it.filter(Char::isDigit) }, label = { Text(stringResource(R.string.studio_trim_start_s)) }, modifier = Modifier.weight(1f), singleLine = true)
-                                    OutlinedTextField(value = trimEndSec, onValueChange = { trimEndSec = it.filter(Char::isDigit) }, label = { Text(stringResource(R.string.studio_trim_end_s)) }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(
+                                        value = trimStartSec,
+                                        onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
+                                        label = { Text(stringResource(R.string.studio_trim_start_s)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = trimEndSec,
+                                        onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
+                                        label = { Text(stringResource(R.string.studio_trim_end_s)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                                trimValidationError?.let { err ->
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
                                 }
                                 Spacer(Modifier.height(10.dp))
+                                val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = { engine.transformMedia(selectedUri!!, "VIDEO_COMPRESS") }, modifier = Modifier.fillMaxWidth()) {
                                         Text(stringResource(R.string.studio_compress_mp4))
@@ -304,9 +322,14 @@ fun MediaStudioScreen(
                                         Text(stringResource(R.string.studio_convert_hevc))
                                     }
                                     Button(onClick = {
-                                        val s = (trimStartSec.toLongOrNull() ?: 0L) * 1000L
-                                        val e = (trimEndSec.toLongOrNull() ?: 10L) * 1000L
-                                        engine.transformMedia(selectedUri!!, "VIDEO_TRIM", s, e)
+                                        val s = trimStartSec.toLongOrNull()
+                                        val e = trimEndSec.toLongOrNull()
+                                        if (s == null || e == null || e <= s) {
+                                            trimValidationError = invalidRangeMsg
+                                        } else {
+                                            trimValidationError = null
+                                            engine.transformMedia(selectedUri!!, "VIDEO_TRIM", s * 1000L, e * 1000L)
+                                        }
                                     }, modifier = Modifier.fillMaxWidth()) {
                                         Text(stringResource(R.string.studio_trim_clip))
                                     }
@@ -334,15 +357,37 @@ fun MediaStudioScreen(
                             if (selectedUri != null) {
                                 Spacer(Modifier.height(10.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(value = trimStartSec, onValueChange = { trimStartSec = it.filter(Char::isDigit) }, label = { Text(stringResource(R.string.studio_cut_start_s)) }, modifier = Modifier.weight(1f), singleLine = true)
-                                    OutlinedTextField(value = trimEndSec, onValueChange = { trimEndSec = it.filter(Char::isDigit) }, label = { Text(stringResource(R.string.studio_cut_end_s)) }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(
+                                        value = trimStartSec,
+                                        onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
+                                        label = { Text(stringResource(R.string.studio_cut_start_s)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = trimEndSec,
+                                        onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
+                                        label = { Text(stringResource(R.string.studio_cut_end_s)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                                trimValidationError?.let { err ->
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
                                 }
                                 Spacer(Modifier.height(10.dp))
+                                val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
                                 Button(
                                     onClick = {
-                                        val s = (trimStartSec.toLongOrNull() ?: 0L) * 1000L
-                                        val e = (trimEndSec.toLongOrNull() ?: 10L) * 1000L
-                                        engine.transformMedia(selectedUri!!, "AUDIO_CONVERT", s, e)
+                                        val s = trimStartSec.toLongOrNull()
+                                        val e = trimEndSec.toLongOrNull()
+                                        if (s == null || e == null || e <= s) {
+                                            trimValidationError = invalidRangeMsg
+                                        } else {
+                                            trimValidationError = null
+                                            engine.transformMedia(selectedUri!!, "AUDIO_CONVERT", s * 1000L, e * 1000L)
+                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {

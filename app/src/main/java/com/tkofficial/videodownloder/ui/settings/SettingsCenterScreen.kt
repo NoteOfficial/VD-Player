@@ -86,6 +86,10 @@ import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.models.AspectRatioMode
 import com.tkofficial.videodownloder.models.DecoderMode
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import com.tkofficial.videodownloder.network.ApiConfigManager
+import com.tkofficial.videodownloder.network.ApiConfigStatus
 import com.tkofficial.videodownloder.ui.components.VaCard
 import com.tkofficial.videodownloder.ui.components.VaLogoEmblem
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
@@ -127,8 +131,17 @@ fun SettingsCenterScreen(
     val tokens = LocalVaTokens.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val statusMsg by viewModel.statusMessage.collectAsStateWithLifecycle()
+    val apiTestResult by viewModel.apiTestResult.collectAsStateWithLifecycle()
+    val isTestingApi by viewModel.isTestingApi.collectAsStateWithLifecycle()
     var activeSection by remember(initialSection) {
         mutableStateOf(SettingsSection.entries.firstOrNull { it.id == initialSection })
+    }
+
+    val apiImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importApiConfig(uri)
+    }
+    val apiExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) viewModel.exportApiConfig(uri)
     }
 
     var hasNotifPerm by remember { mutableStateOf(LocaleHelper.hasNotificationPermission(context)) }
@@ -414,34 +427,197 @@ fun SettingsCenterScreen(
                         }
 
                         SettingsSection.API -> VaCard {
-                            var endpoint by remember(settings.customExtractorEndpoint) { mutableStateOf(settings.customExtractorEndpoint) }
+                            var apiEnabled by remember(settings.apiEnabled) { mutableStateOf(settings.apiEnabled) }
+                            var primaryEndpoint by remember(settings.customExtractorEndpoint) { mutableStateOf(settings.customExtractorEndpoint) }
+                            var secondaryEndpoint by remember(settings.secondaryExtractorEndpoint) { mutableStateOf(settings.secondaryExtractorEndpoint) }
+                            var backupEndpoint by remember(settings.backupExtractorEndpoint) { mutableStateOf(settings.backupExtractorEndpoint) }
+                            var apiVersion by remember(settings.apiVersion) { mutableStateOf(settings.apiVersion) }
                             var apiKey by remember { mutableStateOf("") }
+                            var clearSavedKey by remember { mutableStateOf(false) }
+                            var connectTimeout by remember(settings.connectTimeoutSeconds) { mutableStateOf(settings.connectTimeoutSeconds.toFloat()) }
+                            var requestTimeout by remember(settings.requestTimeoutSeconds) { mutableStateOf(settings.requestTimeoutSeconds.toFloat()) }
+                            var retryLimit by remember(settings.retryLimit) { mutableStateOf(settings.retryLimit.toFloat()) }
+
+                            val liveStatus = apiTestResult?.status ?: ApiConfigManager.computeStaticStatus(
+                                settings.copy(
+                                    apiEnabled = apiEnabled,
+                                    customExtractorEndpoint = primaryEndpoint,
+                                    secondaryExtractorEndpoint = secondaryEndpoint,
+                                    backupExtractorEndpoint = backupEndpoint
+                                )
+                            )
+                            val chipColor = when (liveStatus) {
+                                ApiConfigStatus.CONNECTED, ApiConfigStatus.CONFIGURED_READY -> tokens.success
+                                ApiConfigStatus.NOT_CONFIGURED -> tokens.warning
+                                ApiConfigStatus.INVALID_CONFIG, ApiConfigStatus.CONNECTION_FAILED,
+                                ApiConfigStatus.AUTH_FAILED, ApiConfigStatus.DOWNLOAD_BLOCKED -> tokens.danger
+                            }
+                            val statusText = when (liveStatus) {
+                                ApiConfigStatus.NOT_CONFIGURED -> stringResource(R.string.api_status_not_configured)
+                                ApiConfigStatus.CONFIGURED_READY -> stringResource(R.string.api_status_ready)
+                                ApiConfigStatus.CONNECTED -> stringResource(R.string.api_status_connected)
+                                ApiConfigStatus.CONNECTION_FAILED -> stringResource(R.string.api_status_failed)
+                                ApiConfigStatus.INVALID_CONFIG -> stringResource(R.string.api_status_invalid)
+                                ApiConfigStatus.AUTH_FAILED -> stringResource(R.string.api_status_auth_failed)
+                                ApiConfigStatus.DOWNLOAD_BLOCKED -> stringResource(R.string.api_status_blocked)
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(stringResource(R.string.sec_api), style = MaterialTheme.typography.titleMedium)
+                                VaStatusChip(label = statusText, color = chipColor)
+                            }
+                            Spacer(Modifier.height(6.dp))
                             Text(
                                 stringResource(R.string.set_api_desc),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            apiTestResult?.let { res ->
+                                Spacer(Modifier.height(6.dp))
+                                Text(res.message, style = MaterialTheme.typography.labelSmall, color = chipColor)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            SettingSwitch(stringResource(R.string.api_enable_service), apiEnabled) { apiEnabled = it }
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = primaryEndpoint,
+                                onValueChange = { primaryEndpoint = it },
+                                label = { Text(stringResource(R.string.set_api_endpoint)) },
+                                placeholder = { Text("https://api.example.com/v1/resolve") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("api_primary_input")
+                            )
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
-                                value = endpoint,
-                                onValueChange = { endpoint = it },
-                                label = { Text(stringResource(R.string.set_api_endpoint)) },
-                                placeholder = { Text("https://your-authorized-api.example/resolve") },
+                                value = secondaryEndpoint,
+                                onValueChange = { secondaryEndpoint = it },
+                                label = { Text(stringResource(R.string.api_secondary_endpoint)) },
+                                placeholder = { Text("https://api2.example.com/v1/resolve") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = backupEndpoint,
+                                onValueChange = { backupEndpoint = it },
+                                label = { Text(stringResource(R.string.api_backup_endpoint)) },
+                                placeholder = { Text("https://backup.example.com/v1/resolve") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = apiVersion,
+                                onValueChange = { apiVersion = it },
+                                label = { Text(stringResource(R.string.api_version_label)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = apiKey,
-                                onValueChange = { apiKey = it },
+                                onValueChange = {
+                                    apiKey = it
+                                    if (it.isNotEmpty()) clearSavedKey = false
+                                },
                                 label = { Text(stringResource(R.string.set_api_key)) },
+                                placeholder = {
+                                    if (settings.encryptedExtractorApiKey.isNotBlank() && !clearSavedKey) {
+                                        Text(stringResource(R.string.api_key_stored_hint))
+                                    }
+                                },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            if (settings.encryptedExtractorApiKey.isNotBlank()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = clearSavedKey, onCheckedChange = { clearSavedKey = it })
+                                    Text(stringResource(R.string.api_clear_stored_key), style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(stringResource(R.string.api_connect_timeout, connectTimeout.toInt()), style = MaterialTheme.typography.labelLarge)
+                            Slider(value = connectTimeout, valueRange = 5f..60f, onValueChange = { connectTimeout = it })
+                            Text(stringResource(R.string.set_request_timeout, requestTimeout.toInt()), style = MaterialTheme.typography.labelLarge)
+                            Slider(value = requestTimeout, valueRange = 10f..120f, onValueChange = { requestTimeout = it })
+                            Text(stringResource(R.string.api_retry_limit, retryLimit.toInt()), style = MaterialTheme.typography.labelLarge)
+                            Slider(value = retryLimit, valueRange = 0f..5f, steps = 4, onValueChange = { retryLimit = it })
+
                             Spacer(Modifier.height(10.dp))
-                            Button(onClick = { viewModel.saveApiConfig(endpoint, apiKey) }) {
-                                Text(stringResource(R.string.set_api_save))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = {
+                                        viewModel.saveFullApiConfig(
+                                            enabled = apiEnabled,
+                                            primary = primaryEndpoint,
+                                            secondary = secondaryEndpoint,
+                                            backup = backupEndpoint,
+                                            version = apiVersion,
+                                            rawApiKey = apiKey,
+                                            clearStoredKey = clearSavedKey,
+                                            connectTimeoutSec = connectTimeout.toInt(),
+                                            requestTimeoutSec = requestTimeout.toInt(),
+                                            retryLimit = retryLimit.toInt()
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    Text(stringResource(R.string.set_api_save), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                OutlinedButton(
+                                    enabled = !isTestingApi,
+                                    onClick = {
+                                        viewModel.testApiConnection(
+                                            enabled = apiEnabled,
+                                            primary = primaryEndpoint,
+                                            secondary = secondaryEndpoint,
+                                            backup = backupEndpoint,
+                                            version = apiVersion,
+                                            rawApiKey = apiKey,
+                                            connectTimeoutSec = connectTimeout.toInt(),
+                                            requestTimeoutSec = requestTimeout.toInt(),
+                                            retryLimit = retryLimit.toInt()
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    if (isTestingApi) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Text(stringResource(R.string.api_test_connection), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { apiImportLauncher.launch(arrayOf("application/json")) },
+                                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    Text(stringResource(R.string.api_import_json), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                OutlinedButton(
+                                    onClick = { apiExportLauncher.launch("app_settings.json") },
+                                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    Text(stringResource(R.string.api_export_json), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    clearSavedKey = false
+                                    apiKey = ""
+                                    viewModel.resetApiConfigToDefaults()
+                                },
+                                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                            ) {
+                                Text(stringResource(R.string.api_reset_defaults))
                             }
                         }
 

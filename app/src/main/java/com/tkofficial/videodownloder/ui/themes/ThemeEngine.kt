@@ -215,6 +215,7 @@ fun DownloaderVaTheme(
     config: ThemeConfig,
     batterySaver: Boolean = false,
     lowEndMode: Boolean = false,
+    highContrast: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val sysDark = isSystemInDarkTheme()
@@ -248,7 +249,9 @@ fun DownloaderVaTheme(
         cardSurface = card,
         elevatedSurface = base.elevated,
         iconTint = iconColor,
-        borderSubtle = accent.copy(alpha = if (base.isDark) 0.24f else 0.16f),
+        borderSubtle = accent.copy(
+            alpha = if (highContrast) 0.58f else if (base.isDark) 0.24f else 0.16f
+        ),
         glowColor = base.tertiary,
         success = Color(0xFF22C55E),
         warning = Color(0xFFF59E0B),
@@ -276,8 +279,8 @@ fun DownloaderVaTheme(
             surface = card,
             onSurface = base.onCard,
             surfaceVariant = base.elevated,
-            onSurfaceVariant = base.onCard.copy(alpha = 0.75f),
-            outline = accent.copy(alpha = 0.35f),
+            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.96f else 0.75f),
+            outline = accent.copy(alpha = if (highContrast) 0.70f else 0.35f),
             error = tokens.danger
         )
     } else {
@@ -292,8 +295,8 @@ fun DownloaderVaTheme(
             surface = card,
             onSurface = base.onCard,
             surfaceVariant = base.elevated,
-            onSurfaceVariant = base.onCard.copy(alpha = 0.72f),
-            outline = accent.copy(alpha = 0.28f),
+            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.95f else 0.72f),
+            outline = accent.copy(alpha = if (highContrast) 0.65f else 0.28f),
             error = tokens.danger
         )
     }

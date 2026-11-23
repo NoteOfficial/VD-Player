@@ -39,10 +39,10 @@ class LocalizationAndPermissionsTest {
         assertNotEquals(enTelegram, bnTelegram)
         assertNotEquals(enTelegram, arTelegram)
         assertNotEquals(enTelegram, hiTelegram)
-        assertFalse(enTelegram.contains("@tkParsonalChatBot"))
-        assertFalse(bnTelegram.contains("@tkParsonalChatBot"))
-        assertFalse(arTelegram.contains("@tkParsonalChatBot"))
-        assertFalse(hiTelegram.contains("@tkParsonalChatBot"))
+        assertFalse(enTelegram.contains("@MR_TK_68"))
+        assertFalse(bnTelegram.contains("@MR_TK_68"))
+        assertFalse(arTelegram.contains("@MR_TK_68"))
+        assertFalse(hiTelegram.contains("@MR_TK_68"))
 
         val keysToCheck = listOf(
             R.string.menu_settings,
@@ -52,7 +52,13 @@ class LocalizationAndPermissionsTest {
             R.string.home_search_hint,
             R.string.studio_tab_qr,
             R.string.gallery_title,
-            R.string.vault_title
+            R.string.vault_title,
+            R.string.player_playlist_empty,
+            R.string.player_delete_playlist,
+            R.string.player_all_folders_back,
+            R.string.vp_subtitles_off,
+            R.string.api_status_ready,
+            R.string.api_test_connection
         )
 
         for (lang in listOf(AppLanguage.BENGALI, AppLanguage.ARABIC, AppLanguage.HINDI)) {
@@ -137,8 +143,8 @@ class LocalizationAndPermissionsTest {
 
     @Test
     fun `developer identity matches required Telegram URL email and drawable resource`() {
-        assertEquals("https://t.me/tkParsonalChatBot", DeveloperIdentity.TELEGRAM_URL)
-        assertEquals("@tkParsonalChatBot", DeveloperIdentity.TELEGRAM_HANDLE)
+        assertEquals("https://t.me/MR_TK_68", DeveloperIdentity.TELEGRAM_URL)
+        assertEquals("@MR_TK_68", DeveloperIdentity.TELEGRAM_HANDLE)
         assertEquals("tkofficial68@gmail.com", DeveloperIdentity.DEVELOPER_EMAIL)
         assertNotEquals(0, DeveloperIdentity.DEVELOPER_PHOTO_RES)
 

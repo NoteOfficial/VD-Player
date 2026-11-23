@@ -101,6 +101,7 @@ fun VaultScreen(
     val unlocked by viewModel.vaultUnlocked.collectAsStateWithLifecycle()
     val vaultItems by viewModel.vaultItems.collectAsStateWithLifecycle()
     val decryptedPreview by viewModel.decryptedPreviewBytes.collectAsStateWithLifecycle()
+    val decryptedVideo by viewModel.decryptedVideoFile.collectAsStateWithLifecycle()
     val statusMsg by viewModel.statusMessage.collectAsStateWithLifecycle()
 
     val hasPinConfigured = pinState.first != null
@@ -268,49 +269,44 @@ fun VaultScreen(
         }
     }
 
-    // Decrypted Vault Item Viewer (strictly in-memory for photos, ephemeral temp cache cleaned on close for videos)
+    // Decrypted Vault Item Viewer (streaming temp file for videos, sampled bitmap for photos)
+    decryptedVideo?.let { (meta, file) ->
+        LaunchedEffect(meta.id, file.absolutePath) {
+            viewModel.closeVaultPreview()
+            onPlayDecryptedVideo(android.net.Uri.fromFile(file).toString(), meta.originalName)
+        }
+    }
+
     decryptedPreview?.let { (meta, bytes) ->
-        if (meta.mediaType == "VIDEO") {
-            LaunchedEffect(meta.id) {
-                val temp = withContext(Dispatchers.IO) {
-                    val f = File(context.cacheDir, "vault_play_${meta.id}.mp4")
-                    f.writeBytes(bytes)
-                    f
+        val bitmapState = androidx.compose.runtime.produceState<android.graphics.Bitmap?>(initialValue = null, bytes) {
+            value = withContext(Dispatchers.Default) {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                var sample = 1
+                while ((bounds.outWidth / sample) > 2048 || (bounds.outHeight / sample) > 2048) {
+                    sample *= 2
                 }
-                viewModel.closeVaultPreview()
-                onPlayDecryptedVideo(android.net.Uri.fromFile(temp).toString(), meta.originalName)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
             }
-        } else {
-            val bitmapState = androidx.compose.runtime.produceState<android.graphics.Bitmap?>(initialValue = null, bytes) {
-                value = withContext(Dispatchers.Default) {
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                    var sample = 1
-                    while ((bounds.outWidth / sample) > 2048 || (bounds.outHeight / sample) > 2048) {
-                        sample *= 2
-                    }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+        Dialog(
+            onDismissRequest = viewModel::closeVaultPreview,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                bitmapState.value?.let { bmp ->
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = meta.originalName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-            }
-            Dialog(
-                onDismissRequest = viewModel::closeVaultPreview,
-                properties = DialogProperties(usePlatformDefaultWidth = false)
-            ) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                    bitmapState.value?.let { bmp ->
-                        Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = meta.originalName,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    IconButton(
-                        onClick = viewModel::closeVaultPreview,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-                    ) {
-                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close), tint = Color.White)
-                    }
+                IconButton(
+                    onClick = viewModel::closeVaultPreview,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close), tint = Color.White)
                 }
             }
         }

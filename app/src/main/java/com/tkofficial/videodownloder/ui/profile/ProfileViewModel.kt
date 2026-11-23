@@ -22,6 +22,9 @@ import com.tkofficial.videodownloder.models.IntegrityReport
 import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.models.StorageSummary
 import com.tkofficial.videodownloder.models.ThemeConfig
+import com.tkofficial.videodownloder.network.ApiConfigManager
+import com.tkofficial.videodownloder.network.ApiConfigStatus
+import com.tkofficial.videodownloder.network.ApiTestResult
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +46,7 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val vaultRepo = container.vaultRepository
     private val fileRepo = container.fileManagerRepository
     private val backupRepo = container.backupRepository
+    private val apiConfigManager = container.apiConfigManager
     private val systemDao = container.database.systemDao()
 
     val settings: StateFlow<AppSettings> = prefsRepo.settingsFlow
@@ -71,6 +75,9 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val _decryptedPreviewBytes = MutableStateFlow<Pair<VaultMetadataEntity, ByteArray>?>(null)
     val decryptedPreviewBytes: StateFlow<Pair<VaultMetadataEntity, ByteArray>?> = _decryptedPreviewBytes.asStateFlow()
 
+    private val _decryptedVideoFile = MutableStateFlow<Pair<VaultMetadataEntity, File>?>(null)
+    val decryptedVideoFile: StateFlow<Pair<VaultMetadataEntity, File>?> = _decryptedVideoFile.asStateFlow()
+
     private val _integrityReport = MutableStateFlow<IntegrityReport?>(null)
     val integrityReport: StateFlow<IntegrityReport?> = _integrityReport.asStateFlow()
 
@@ -88,6 +95,12 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
+
+    private val _apiTestResult = MutableStateFlow<ApiTestResult?>(null)
+    val apiTestResult: StateFlow<ApiTestResult?> = _apiTestResult.asStateFlow()
+
+    private val _isTestingApi = MutableStateFlow(false)
+    val isTestingApi: StateFlow<Boolean> = _isTestingApi.asStateFlow()
 
     private suspend fun locString(@StringRes resId: Int, vararg args: Any): String {
         val lang = prefsRepo.settingsFlow.first().language
@@ -121,17 +134,163 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun saveApiConfig(endpoint: String, rawApiKey: String) {
+        saveFullApiConfig(
+            enabled = endpoint.isNotBlank(),
+            primary = endpoint,
+            secondary = settings.value.secondaryExtractorEndpoint,
+            backup = settings.value.backupExtractorEndpoint,
+            version = settings.value.apiVersion,
+            rawApiKey = rawApiKey,
+            clearStoredKey = false,
+            connectTimeoutSec = settings.value.connectTimeoutSeconds,
+            requestTimeoutSec = settings.value.requestTimeoutSeconds,
+            retryLimit = settings.value.retryLimit
+        )
+    }
+
+    fun saveFullApiConfig(
+        enabled: Boolean,
+        primary: String,
+        secondary: String,
+        backup: String,
+        version: String,
+        rawApiKey: String,
+        clearStoredKey: Boolean,
+        connectTimeoutSec: Int,
+        requestTimeoutSec: Int,
+        retryLimit: Int
+    ) {
         viewModelScope.launch {
+            val cleanPrimary = primary.trim()
+            val cleanSecondary = secondary.trim()
+            val cleanBackup = backup.trim()
+            val allowHttp = settings.value.allowCleartextHttp
+            val nonEmpty = listOf(cleanPrimary, cleanSecondary, cleanBackup).filter { it.isNotBlank() }
+            if (nonEmpty.any { !ApiConfigManager.isValidEndpointUrl(it, allowHttp = allowHttp) }) {
+                _apiTestResult.value = ApiTestResult(
+                    status = ApiConfigStatus.INVALID_CONFIG,
+                    message = locString(R.string.api_invalid_url_error)
+                )
+                _statusMessage.value = locString(R.string.api_invalid_url_error)
+                return@launch
+            }
             val encrypted = withContext(Dispatchers.IO) {
-                if (rawApiKey.isNotBlank()) securityManager.encryptSecretString(rawApiKey.trim()) else ""
+                when {
+                    clearStoredKey -> ""
+                    rawApiKey.isNotBlank() -> securityManager.encryptSecretString(rawApiKey.trim())
+                    else -> settings.value.encryptedExtractorApiKey
+                }
             }
             prefsRepo.updateSettings {
                 it.copy(
-                    customExtractorEndpoint = endpoint.trim(),
-                    encryptedExtractorApiKey = encrypted
+                    apiEnabled = enabled,
+                    customExtractorEndpoint = cleanPrimary,
+                    secondaryExtractorEndpoint = cleanSecondary,
+                    backupExtractorEndpoint = cleanBackup,
+                    apiVersion = version.trim().ifBlank { "v1" },
+                    encryptedExtractorApiKey = encrypted,
+                    connectTimeoutSeconds = connectTimeoutSec.coerceIn(5, 60),
+                    requestTimeoutSeconds = requestTimeoutSec.coerceIn(10, 120),
+                    retryLimit = retryLimit.coerceIn(0, 5)
                 )
             }
+            _apiTestResult.value = null
             _statusMessage.value = locString(R.string.msg_api_saved)
+        }
+    }
+
+    fun testApiConnection(
+        enabled: Boolean,
+        primary: String,
+        secondary: String,
+        backup: String,
+        version: String,
+        rawApiKey: String,
+        connectTimeoutSec: Int,
+        requestTimeoutSec: Int,
+        retryLimit: Int
+    ) {
+        viewModelScope.launch {
+            _isTestingApi.value = true
+            try {
+                val candidate = settings.value.copy(
+                    apiEnabled = enabled,
+                    customExtractorEndpoint = primary.trim(),
+                    secondaryExtractorEndpoint = secondary.trim(),
+                    backupExtractorEndpoint = backup.trim(),
+                    apiVersion = version.trim().ifBlank { "v1" },
+                    connectTimeoutSeconds = connectTimeoutSec.coerceIn(5, 60),
+                    requestTimeoutSeconds = requestTimeoutSec.coerceIn(10, 120),
+                    retryLimit = retryLimit.coerceIn(0, 5)
+                )
+                val key = withContext(Dispatchers.IO) {
+                    if (rawApiKey.isNotBlank()) rawApiKey.trim()
+                    else securityManager.decryptSecretString(candidate.encryptedExtractorApiKey)
+                }
+                val result = apiConfigManager.testConnection(candidate, key)
+                _apiTestResult.value = result
+                _statusMessage.value = result.message
+            } finally {
+                _isTestingApi.value = false
+            }
+        }
+    }
+
+    fun resetApiConfigToDefaults() {
+        viewModelScope.launch {
+            val defaults = withContext(Dispatchers.IO) { apiConfigManager.loadDefaultAssetConfig() }
+            prefsRepo.updateSettings {
+                it.copy(
+                    apiEnabled = defaults.enabled,
+                    customExtractorEndpoint = defaults.primaryEndpoint,
+                    secondaryExtractorEndpoint = defaults.secondaryEndpoint,
+                    backupExtractorEndpoint = defaults.backupEndpoint,
+                    apiVersion = defaults.apiVersion,
+                    connectTimeoutSeconds = defaults.connectTimeoutSeconds,
+                    requestTimeoutSeconds = defaults.requestTimeoutSeconds,
+                    retryLimit = defaults.retryLimit,
+                    encryptedExtractorApiKey = ""
+                )
+            }
+            _apiTestResult.value = null
+            _statusMessage.value = locString(R.string.api_reset_done)
+        }
+    }
+
+    fun importApiConfig(uri: Uri) {
+        viewModelScope.launch {
+            apiConfigManager.importConfigFromUri(uri)
+                .onSuccess { cfg ->
+                    prefsRepo.updateSettings {
+                        it.copy(
+                            apiEnabled = cfg.enabled,
+                            customExtractorEndpoint = cfg.primaryEndpoint,
+                            secondaryExtractorEndpoint = cfg.secondaryEndpoint,
+                            backupExtractorEndpoint = cfg.backupEndpoint,
+                            apiVersion = cfg.apiVersion,
+                            connectTimeoutSeconds = cfg.connectTimeoutSeconds,
+                            requestTimeoutSeconds = cfg.requestTimeoutSeconds,
+                            retryLimit = cfg.retryLimit
+                        )
+                    }
+                    _apiTestResult.value = null
+                    _statusMessage.value = locString(R.string.api_imported_ok)
+                }
+                .onFailure {
+                    _apiTestResult.value = ApiTestResult(
+                        status = ApiConfigStatus.INVALID_CONFIG,
+                        message = it.localizedMessage ?: locString(R.string.api_import_failed)
+                    )
+                    _statusMessage.value = it.localizedMessage ?: locString(R.string.api_import_failed)
+                }
+        }
+    }
+
+    fun exportApiConfig(uri: Uri) {
+        viewModelScope.launch {
+            apiConfigManager.exportConfigToUri(uri, settings.value)
+                .onSuccess { _statusMessage.value = locString(R.string.api_exported_ok) }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: locString(R.string.api_export_failed) }
         }
     }
 
@@ -249,6 +408,10 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun lockVault() {
         _vaultUnlocked.value = false
         _decryptedPreviewBytes.value = null
+        _decryptedVideoFile.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            cleanupVaultTempFiles()
+        }
     }
 
     fun importToVault(uri: Uri) {
@@ -264,17 +427,36 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     fun openVaultItem(item: VaultMetadataEntity) {
         viewModelScope.launch {
-            val res = vaultRepo.decryptVaultBytes(item)
-            res.onSuccess { bytes ->
-                _decryptedPreviewBytes.value = item to bytes
-            }.onFailure {
-                _statusMessage.value = it.localizedMessage ?: locString(R.string.msg_decrypt_fail)
+            if (item.mediaType == "VIDEO") {
+                val dest = File(app.cacheDir, "vault_play_${item.id}.mp4")
+                val res = vaultRepo.decryptVaultToFile(item, dest)
+                res.onSuccess { file ->
+                    _decryptedVideoFile.value = item to file
+                }.onFailure {
+                    _statusMessage.value = it.localizedMessage ?: locString(R.string.msg_decrypt_fail)
+                }
+            } else {
+                val res = vaultRepo.decryptVaultBytes(item)
+                res.onSuccess { bytes ->
+                    _decryptedPreviewBytes.value = item to bytes
+                }.onFailure {
+                    _statusMessage.value = it.localizedMessage ?: locString(R.string.msg_decrypt_fail)
+                }
             }
         }
     }
 
     fun closeVaultPreview() {
         _decryptedPreviewBytes.value = null
+        _decryptedVideoFile.value = null
+    }
+
+    private fun cleanupVaultTempFiles() {
+        app.cacheDir.listFiles()?.forEach { file ->
+            if (file.name.startsWith("vault_play_")) {
+                file.delete()
+            }
+        }
     }
 
     fun deleteVaultItem(item: VaultMetadataEntity) {

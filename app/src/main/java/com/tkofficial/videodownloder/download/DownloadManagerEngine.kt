@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -71,6 +72,14 @@ class DownloadManagerEngine(
 
     @Volatile
     private var latestSettings: AppSettings = AppSettings()
+
+    @Volatile
+    private var lastStorageWarningAtMs: Long = 0L
+
+    private companion object {
+        const val LOW_STORAGE_THRESHOLD_BYTES = 250L * 1024L * 1024L
+        const val STORAGE_WARNING_COOLDOWN_MS = 10L * 60L * 1000L
+    }
 
     init {
         scope.launch {
@@ -101,12 +110,15 @@ class DownloadManagerEngine(
         option: MediaFormatOption,
         priority: Int = 0,
         scheduledDelayMinutes: Long = 0L
-    ): Result<Long> {
+    ): Result<Long> = withContext(Dispatchers.IO) {
         val settings = prefsRepo.settingsFlow.first()
+        latestSettings = settings
         if (settings.duplicateCheckEnabled) {
             val existing = downloadDao.findByUrl(option.downloadUrl)
             if (existing != null && existing.status in setOf("QUEUED", "DOWNLOADING", "PAUSED", "COMPLETED")) {
-                return Result.failure(IllegalStateException("Duplicate link already exists in downloads (${existing.fileName})."))
+                return@withContext Result.failure(
+                    IllegalStateException("Duplicate link already exists in downloads (${existing.fileName}).")
+                )
             }
         }
 
@@ -151,11 +163,18 @@ class DownloadManagerEngine(
             startForegroundServiceIfNeeded()
             pumpQueue()
         }
-        return Result.success(id)
+        Result.success(id)
     }
 
-    suspend fun enqueueDirectUrl(url: String, fileName: String, mimeType: String, category: MediaCategory, priority: Int = 0): Long {
+    suspend fun enqueueDirectUrl(
+        url: String,
+        fileName: String,
+        mimeType: String,
+        category: MediaCategory,
+        priority: Int = 0
+    ): Long = withContext(Dispatchers.IO) {
         val settings = prefsRepo.settingsFlow.first()
+        latestSettings = settings
         val ext = FormatUtils.extensionFromMime(mimeType)
         val cleanName = FormatUtils.sanitizeFileName(fileName, ext)
         val targetDir = FormatUtils.getAppSubDir(context, category)
@@ -178,7 +197,7 @@ class DownloadManagerEngine(
         val id = downloadDao.enqueueDownload(entity, settings.wifiOnlyDownloads, settings.speedLimitKbps)
         startForegroundServiceIfNeeded()
         pumpQueue()
-        return id
+        id
     }
 
     private fun scheduleWithWorkManager(downloadId: Long, delayMinutes: Long, wifiOnly: Boolean) {
@@ -206,57 +225,49 @@ class DownloadManagerEngine(
         }
     }
 
-    fun pauseDownload(id: Long) {
-        scope.launch {
-            activeJobs[id]?.cancel(CancellationException("Paused by user"))
-            activeJobs.remove(id)
-            downloadDao.updateStatus(id, "PAUSED")
-            downloadDao.getById(id)?.let { notificationHelper.notifyDownloadProgress(it) }
-            updateActiveCountAndService()
-            pumpQueue()
-        }
+    fun pauseDownload(id: Long): Job = scope.launch {
+        activeJobs[id]?.cancel(CancellationException("Paused by user"))
+        activeJobs.remove(id)
+        downloadDao.updateStatus(id, "PAUSED")
+        downloadDao.getById(id)?.let { notificationHelper.notifyDownloadProgress(it) }
+        updateActiveCountAndService()
+        pumpQueue()
     }
 
-    fun resumeDownload(id: Long) {
-        scope.launch {
-            val item = downloadDao.getById(id) ?: return@launch
-            if (item.status == "PAUSED" || item.status == "FAILED") {
-                downloadDao.updateStatus(id, "QUEUED", error = null)
-                startForegroundServiceIfNeeded()
-                pumpQueue()
-            }
-        }
-    }
-
-    fun cancelDownload(id: Long) {
-        scope.launch {
-            activeJobs[id]?.cancel(CancellationException("Cancelled by user"))
-            activeJobs.remove(id)
-            val item = downloadDao.getById(id)
-            if (item != null) {
-                File("${item.localPath}.part").delete()
-                downloadDao.updateStatus(id, "CANCELLED", error = "Cancelled by user")
-            }
-            notificationHelper.cancelProgressNotification(id)
-            updateActiveCountAndService()
-            pumpQueue()
-        }
-    }
-
-    fun retryDownload(id: Long) {
-        scope.launch {
-            val item = downloadDao.getById(id) ?: return@launch
-            downloadDao.update(
-                item.copy(
-                    status = "QUEUED",
-                    errorMessage = null,
-                    retryCount = item.retryCount + 1,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
+    fun resumeDownload(id: Long): Job = scope.launch {
+        val item = downloadDao.getById(id) ?: return@launch
+        if (item.status == "PAUSED" || item.status == "FAILED") {
+            downloadDao.updateStatus(id, "QUEUED", error = null)
             startForegroundServiceIfNeeded()
             pumpQueue()
         }
+    }
+
+    fun cancelDownload(id: Long): Job = scope.launch {
+        activeJobs[id]?.cancel(CancellationException("Cancelled by user"))
+        activeJobs.remove(id)
+        val item = downloadDao.getById(id)
+        if (item != null) {
+            File("${item.localPath}.part").delete()
+            downloadDao.updateStatus(id, "CANCELLED", error = "Cancelled by user")
+        }
+        notificationHelper.cancelProgressNotification(id)
+        updateActiveCountAndService()
+        pumpQueue()
+    }
+
+    fun retryDownload(id: Long): Job = scope.launch {
+        val item = downloadDao.getById(id) ?: return@launch
+        downloadDao.update(
+            item.copy(
+                status = "QUEUED",
+                errorMessage = null,
+                retryCount = item.retryCount + 1,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        startForegroundServiceIfNeeded()
+        pumpQueue()
     }
 
     fun renameDownload(id: Long, newFileName: String) {
@@ -274,6 +285,16 @@ class DownloadManagerEngine(
                 partFile.renameTo(File("${newFile.absolutePath}.part"))
             }
             downloadDao.renameDownload(id, safeName, newFile.absolutePath)
+            val uriStr = runCatching {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", newFile).toString()
+            }.getOrDefault(item.contentUri)
+            galleryDao.renameMediaByDownloadId(
+                downloadId = id,
+                newTitle = newFile.nameWithoutExtension,
+                newFileName = safeName,
+                newPath = newFile.absolutePath,
+                newContentUri = uriStr
+            )
         }
     }
 
@@ -285,6 +306,7 @@ class DownloadManagerEngine(
             if (item != null && deleteLocalFile) {
                 File(item.localPath).delete()
                 File("${item.localPath}.part").delete()
+                galleryDao.deleteMediaByDownloadId(id)
             }
             downloadDao.deleteById(id)
             notificationHelper.cancelProgressNotification(id)
@@ -384,7 +406,10 @@ class DownloadManagerEngine(
                 val supportsRange = isResuming206 ||
                     (response.header("Accept-Ranges")?.contains("bytes", true) == true)
 
-                if (totalBytes > 0L && !hasEnoughStorage(finalFile.parentFile ?: context.filesDir, totalBytes - (if (isResuming206) existingBytes else 0L))) {
+                val storageDir = finalFile.parentFile ?: context.filesDir
+                checkLowStorageWarning(storageDir, settings.notifyStorageWarnings)
+
+                if (totalBytes > 0L && !hasEnoughStorage(storageDir, totalBytes - (if (isResuming206) existingBytes else 0L))) {
                     failDownload(entity, "Insufficient device storage available for ${FormatUtils.formatBytes(totalBytes)}.")
                     return
                 }
@@ -397,6 +422,7 @@ class DownloadManagerEngine(
                 var downloadedSoFar = if (isResuming206) existingBytes else 0L
                 val buffer = ByteArray(16 * 1024)
                 var lastUiUpdateMs = System.currentTimeMillis()
+                var lastNotifUpdateMs = 0L
                 var bytesInWindow = 0L
 
                 val raf = if (isResuming206) {
@@ -451,8 +477,18 @@ class DownloadManagerEngine(
                                     supportsRange = supportsRange
                                 )
 
-                                if (latestSettings.notifyActiveDownloads) {
-                                    downloadDao.getById(downloadId)?.let { notificationHelper.notifyDownloadProgress(it) }
+                                if (latestSettings.notifyActiveDownloads && (now - lastNotifUpdateMs >= 750L)) {
+                                    notificationHelper.notifyDownloadProgress(
+                                        entity.copy(
+                                            status = "DOWNLOADING",
+                                            downloadedBytes = downloadedSoFar,
+                                            totalBytes = totalBytes,
+                                            speedBytesPerSec = speed,
+                                            etaSeconds = eta,
+                                            supportsRange = supportsRange
+                                        )
+                                    )
+                                    lastNotifUpdateMs = now
                                 }
                                 lastUiUpdateMs = now
                                 bytesInWindow = 0L
@@ -638,6 +674,26 @@ class DownloadManagerEngine(
         }.getOrDefault(true)
     }
 
+    private suspend fun checkLowStorageWarning(dir: File, notifyEnabled: Boolean) {
+        if (!notifyEnabled) return
+        val available = runCatching { StatFs(dir.absolutePath).availableBytes }.getOrDefault(Long.MAX_VALUE)
+        if (available < LOW_STORAGE_THRESHOLD_BYTES) {
+            val now = System.currentTimeMillis()
+            if (now - lastStorageWarningAtMs >= STORAGE_WARNING_COOLDOWN_MS) {
+                lastStorageWarningAtMs = now
+                notificationHelper.notifyStorageWarning(available)
+                systemDao.insertNotification(
+                    AppNotificationEntity(
+                        category = "STORAGE",
+                        title = "Low Storage Warning",
+                        message = "Only ${FormatUtils.formatBytes(available)} free on device storage.",
+                        actionTarget = "notifications"
+                    )
+                )
+            }
+        }
+    }
+
     private fun startForegroundServiceIfNeeded() {
         runCatching {
             val intent = Intent(context, DownloadForegroundService::class.java)
@@ -646,12 +702,7 @@ class DownloadManagerEngine(
     }
 
     private fun updateActiveCountAndService() {
-        val count = activeJobs.size
-        _activeCount.value = count
-        if (count == 0) {
-            runCatching {
-                context.stopService(Intent(context, DownloadForegroundService::class.java))
-            }
-        }
+        // Let DownloadForegroundService debounce and stop itself gracefully after verifying DAO idle state.
+        _activeCount.value = activeJobs.size
     }
 }

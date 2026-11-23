@@ -111,6 +111,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTab.value = tab
     }
 
+    fun openCompletedTab() {
+        _selectedTab.value = DownloadManagerTab.COMPLETED
+    }
+
     fun setFilterCategory(category: MediaCategory?) {
         _filterCategory.value = category
     }
@@ -138,7 +142,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 allowHttp = s.allowCleartextHttp,
                 timeoutSeconds = s.requestTimeoutSeconds,
                 customEndpoint = s.customExtractorEndpoint,
-                decryptedApiKey = apiKey
+                decryptedApiKey = apiKey,
+                secondaryEndpoint = s.secondaryExtractorEndpoint,
+                backupEndpoint = s.backupExtractorEndpoint,
+                apiVersion = s.apiVersion,
+                connectTimeoutSeconds = s.connectTimeoutSeconds,
+                retryLimit = s.retryLimit,
+                apiEnabled = s.apiEnabled
             )
             val failMsg = locString(R.string.msg_failed_analyze)
             _analysisState.value = result.fold(
@@ -194,7 +204,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     allowHttp = s.allowCleartextHttp,
                     timeoutSeconds = s.requestTimeoutSeconds,
                     customEndpoint = s.customExtractorEndpoint,
-                    decryptedApiKey = apiKey
+                    decryptedApiKey = apiKey,
+                    secondaryEndpoint = s.secondaryExtractorEndpoint,
+                    backupEndpoint = s.backupExtractorEndpoint,
+                    apiVersion = s.apiVersion,
+                    connectTimeoutSeconds = s.connectTimeoutSeconds,
+                    retryLimit = s.retryLimit,
+                    apiEnabled = s.apiEnabled
                 ).getOrNull()
 
                 if (analyzed != null && analyzed.options.isNotEmpty()) {

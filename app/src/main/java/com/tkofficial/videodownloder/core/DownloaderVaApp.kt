@@ -12,6 +12,7 @@ import com.tkofficial.videodownloder.data.PreferencesRepository
 import com.tkofficial.videodownloder.database.AppDatabase
 import com.tkofficial.videodownloder.download.DownloadManagerEngine
 import com.tkofficial.videodownloder.media.MediaStudioEngine
+import com.tkofficial.videodownloder.network.ApiConfigManager
 import com.tkofficial.videodownloder.network.LinkAnalyzer
 import com.tkofficial.videodownloder.notifications.NotificationHelper
 import com.tkofficial.videodownloder.repositories.BackupRepository
@@ -22,6 +23,7 @@ import com.tkofficial.videodownloder.security.SecurityManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -39,6 +41,8 @@ class AppContainer(context: Context) {
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
+
+    val apiConfigManager: ApiConfigManager = ApiConfigManager(context, okHttpClient)
 
     val linkAnalyzer: LinkAnalyzer = LinkAnalyzer(okHttpClient)
 
@@ -95,6 +99,22 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
 
         appScope.launch {
             container.database.downloadDao().pauseInterruptedOnBoot()
+            val assetCfg = container.apiConfigManager.loadDefaultAssetConfig()
+            val current = container.preferencesRepository.settingsFlow.first()
+            if (current.customExtractorEndpoint.isBlank() && !current.apiEnabled && assetCfg.enabled && assetCfg.primaryEndpoint.isNotBlank()) {
+                container.preferencesRepository.updateSettings { s ->
+                    s.copy(
+                        apiEnabled = assetCfg.enabled,
+                        customExtractorEndpoint = assetCfg.primaryEndpoint,
+                        secondaryExtractorEndpoint = assetCfg.secondaryEndpoint,
+                        backupExtractorEndpoint = assetCfg.backupEndpoint,
+                        apiVersion = assetCfg.apiVersion,
+                        requestTimeoutSeconds = assetCfg.requestTimeoutSeconds,
+                        connectTimeoutSeconds = assetCfg.connectTimeoutSeconds,
+                        retryLimit = assetCfg.retryLimit
+                    )
+                }
+            }
         }
     }
 

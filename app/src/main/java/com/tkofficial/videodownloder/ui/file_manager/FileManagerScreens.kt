@@ -1,6 +1,7 @@
 package com.tkofficial.videodownloder.ui.file_manager
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -108,7 +109,20 @@ fun FileManagerScreen(
         }
     }
 
-    val filtered = entries.filter { search.isBlank() || it.name.contains(search, true) }
+    val filtered = remember(entries, search) {
+        entries.filter { search.isBlank() || it.name.contains(search, true) }
+    }
+    val canStepUp = activeCategory == null && currentDir.parentFile != null &&
+        currentDir.name != "VDPlayer" && currentDir.absolutePath.contains("VDPlayer")
+
+    BackHandler(enabled = activeCategory != null || canStepUp) {
+        if (activeCategory != null) {
+            activeCategory = null
+            viewModel.loadDirectory()
+        } else if (canStepUp) {
+            currentDir.parentFile?.let { viewModel.loadDirectory(it) }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -211,7 +225,8 @@ fun FileManagerScreen(
                                 selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
                             }
                         },
-                        contentPadding = PaddingValues(12.dp)
+                        contentPadding = PaddingValues(12.dp),
+                        modifier = Modifier.animateItem()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -480,7 +495,9 @@ fun NotificationCenterScreen(
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     var filterCat by remember { mutableStateOf<String?>(null) }
 
-    val displayed = notifications.filter { filterCat == null || it.category == filterCat }
+    val displayed = remember(notifications, filterCat) {
+        notifications.filter { filterCat == null || it.category == filterCat }
+    }
 
     Scaffold(
         topBar = {
@@ -517,7 +534,7 @@ fun NotificationCenterScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(displayed, key = { it.id }) { n ->
-                        VaCard(highlighted = !n.isRead, contentPadding = PaddingValues(12.dp)) {
+                        VaCard(highlighted = !n.isRead, contentPadding = PaddingValues(12.dp), modifier = Modifier.animateItem()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Notifications, contentDescription = null, tint = tokens.iconTint)
                                 Spacer(Modifier.width(10.dp))

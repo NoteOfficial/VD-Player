@@ -391,6 +391,7 @@ fun GalleryScreen(
                     val isSelected = selectedIds.contains(item.id)
                     Box(
                         modifier = Modifier
+                            .animateItem()
                             .aspectRatio(1f)
                             .clip(RoundedCornerShape(tokens.smallRadius))
                             .border(
@@ -481,11 +482,18 @@ fun GalleryScreen(
                                 viewerItem = item
                             }
                         },
-                        contentPadding = PaddingValues(10.dp)
+                        contentPadding = PaddingValues(10.dp),
+                        modifier = Modifier.animateItem()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            val listThumb = remember(item.filePath, item.id) {
+                                ImageRequest.Builder(context)
+                                    .data(File(item.filePath))
+                                    .size(240)
+                                    .build()
+                            }
                             AsyncImage(
-                                model = File(item.filePath),
+                                model = listThumb,
                                 contentDescription = item.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))

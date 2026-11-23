@@ -19,10 +19,16 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.tkofficial.videodownloder.MainActivity
+import com.tkofficial.videodownloder.core.DownloaderVaApp
 import com.tkofficial.videodownloder.models.AudioEqState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 object AudioEffectsBridge {
     private val _eqState = MutableStateFlow(AudioEqState())
@@ -132,6 +138,7 @@ class PlaybackService : MediaLibraryService() {
 
     private var mediaLibrarySession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -158,6 +165,14 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         })
+
+        (applicationContext as? DownloaderVaApp)?.container?.preferencesRepository?.let { prefs ->
+            serviceScope.launch {
+                prefs.settingsFlow.collect { settings ->
+                    player.pauseAtEndOfMediaItems = !settings.musicGaplessEnabled
+                }
+            }
+        }
 
         val sessionActivityIntent = PendingIntent.getActivity(
             this,
@@ -225,6 +240,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         AudioEffectsBridge.release()
         mediaLibrarySession?.run {
             player.release()

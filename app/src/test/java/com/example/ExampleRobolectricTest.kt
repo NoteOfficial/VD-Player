@@ -21,8 +21,8 @@ class ExampleRobolectricTest {
         assertEquals("VD Player", DeveloperIdentity.APP_NAME)
         assertEquals("com.tkofficial.videodownloder", DeveloperIdentity.PACKAGE_NAME)
         assertEquals("Mr TK", DeveloperIdentity.DEVELOPER_NAME)
-        assertEquals("@tkParsonalChatBot", DeveloperIdentity.TELEGRAM_HANDLE)
-        assertEquals("https://t.me/tkParsonalChatBot", DeveloperIdentity.TELEGRAM_URL)
+        assertEquals("@MR_TK_68", DeveloperIdentity.TELEGRAM_HANDLE)
+        assertEquals("https://t.me/MR_TK_68", DeveloperIdentity.TELEGRAM_URL)
         assertEquals("tkofficial68@gmail.com", DeveloperIdentity.DEVELOPER_EMAIL)
         assertEquals("1.0.0", DeveloperIdentity.VERSION_NAME)
     }

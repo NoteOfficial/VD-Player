@@ -82,10 +82,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun recordVisit(title: String, url: String) {
         if (!url.startsWith("http")) return
+        if (!settings.value.browserSaveHistory) return
         viewModelScope.launch {
-            if (prefsRepo.settingsFlow.first().browserSaveHistory) {
-                systemDao.insertBrowserHistory(BrowserHistoryEntity(title = title.ifBlank { url }, url = url))
-            }
+            systemDao.insertBrowserHistory(BrowserHistoryEntity(title = title.ifBlank { url }, url = url))
         }
     }
 

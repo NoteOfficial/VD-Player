@@ -40,6 +40,7 @@ interface CustomExtractorService {
     suspend fun resolveMedia(
         @Url endpointUrl: String,
         @Header("Authorization") authorization: String?,
+        @Header("X-Api-Version") apiVersion: String = "v1",
         @Header("Accept") accept: String = "application/json",
         @Body request: ExtractorApiRequest
     ): Response<ExtractorApiResponse>

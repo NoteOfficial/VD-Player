@@ -628,4 +628,39 @@
     <string name="lang_bengali">বাংলা (Bengali)</string>
     <string name="lang_arabic">العربية (Arabic)</string>
     <string name="lang_hindi">हिन्दी (Hindi)</string>
+    <string name="player_playlist_empty">No items in this playlist yet.</string>
+    <string name="player_delete_playlist">Delete playlist</string>
+    <string name="player_all_folders_back">← All Folders</string>
+    <string name="player_folder_items_count">%1$d items</string>
+    <string name="vp_subtitles_off">Subtitles Off</string>
+    <string name="studio_invalid_trim_range">End time must be greater than start time.</string>
+    <string name="notif_storage_warning_title">Low Storage Warning</string>
+    <string name="notif_storage_warning_body">Only %1$s free space remaining. Free up space or pause large downloads.</string>
+
+    <!-- External JSON / UI API Configuration -->
+    <string name="api_status_not_configured">API Not Configured</string>
+    <string name="api_status_ready">Ready</string>
+    <string name="api_status_connected">Connected</string>
+    <string name="api_status_failed">API Connection Failed</string>
+    <string name="api_status_invalid">Invalid Configuration</string>
+    <string name="api_status_auth_failed">Authentication Failed</string>
+    <string name="api_status_blocked">Download Blocked</string>
+    <string name="api_enable_service">Enable Extractor API Service</string>
+    <string name="api_secondary_endpoint">Secondary Endpoint (Failover)</string>
+    <string name="api_backup_endpoint">Backup Endpoint</string>
+    <string name="api_version_label">API Version</string>
+    <string name="api_key_stored_hint">Encrypted API key stored — leave blank to keep or enter a new key</string>
+    <string name="api_clear_stored_key">Clear Stored Key</string>
+    <string name="api_connect_timeout">Connect Timeout: %1$ds</string>
+    <string name="api_retry_limit">Retry Limit: %1$d</string>
+    <string name="api_test_connection">Test API Connection</string>
+    <string name="api_import_json">Import JSON</string>
+    <string name="api_export_json">Export JSON</string>
+    <string name="api_reset_defaults">Reset API Config to Defaults</string>
+    <string name="api_invalid_url_error">Invalid endpoint URL. HTTPS is required (or enable HTTP).</string>
+    <string name="api_reset_done">API configuration reset to app_settings.json defaults.</string>
+    <string name="api_imported_ok">Imported API JSON configuration.</string>
+    <string name="api_import_failed">Failed to import API configuration JSON.</string>
+    <string name="api_exported_ok">Exported API JSON configuration.</string>
+    <string name="api_export_failed">Failed to export API configuration JSON.</string>
 </resources>

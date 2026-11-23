@@ -12,10 +12,14 @@ import com.example.BuildConfig
 import com.tkofficial.videodownloder.core.DeveloperIdentity
 import com.tkofficial.videodownloder.models.IntegrityReport
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
@@ -70,6 +74,38 @@ class SecurityManager(private val context: Context) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(cipherText)
+    }
+
+    fun encryptVaultStream(input: InputStream, output: OutputStream): Pair<ByteArray, Long> {
+        val key = getOrCreateKey(VAULT_KEY_ALIAS)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val iv = cipher.iv
+        var totalRead = 0L
+        CipherOutputStream(output, cipher).use { cos ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                cos.write(buffer, 0, read)
+                totalRead += read
+            }
+        }
+        return iv to totalRead
+    }
+
+    fun decryptVaultStream(iv: ByteArray, input: InputStream, output: OutputStream) {
+        val key = getOrCreateKey(VAULT_KEY_ALIAS)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
+        CipherInputStream(input, cipher).use { cis ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val read = cis.read(buffer)
+                if (read == -1) break
+                output.write(buffer, 0, read)
+            }
+        }
     }
 
     fun encryptSecretString(plainText: String): String {

@@ -13,8 +13,10 @@ import androidx.core.content.FileProvider
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
@@ -207,6 +209,8 @@ class MediaStudioEngine(
         val editedBuilder = EditedMediaItem.Builder(mediaItemBuilder.build())
         if (isAudioOnly) {
             editedBuilder.setRemoveVideo(true)
+        } else if (mode == "VIDEO_COMPRESS") {
+            editedBuilder.setEffects(Effects(emptyList(), listOf(Presentation.createForHeight(720))))
         }
 
         val transformerBuilder = Transformer.Builder(context)
@@ -225,15 +229,15 @@ class MediaStudioEngine(
                 activeTransformer = null
                 val galleryType = if (isAudioOnly) "AUDIO" else "VIDEO"
                 val mime = if (isAudioOnly) "audio/mp4" else "video/mp4"
-                // Register asynchronously on managed IO scope
+                // Register first so Gallery/Player immediately shows the exported file
                 engineScope.launch {
                     registerOutputInGallery(outFile, galleryType, mime, exportResult.durationMs.coerceAtLeast(0L))
+                    _jobState.value = StudioJobState.Completed(
+                        outputPath = outFile.absolutePath,
+                        outputSizeBytes = outFile.length(),
+                        message = "Exported ${outFile.name} (${FormatUtils.formatBytes(outFile.length())})"
+                    )
                 }
-                _jobState.value = StudioJobState.Completed(
-                    outputPath = outFile.absolutePath,
-                    outputSizeBytes = outFile.length(),
-                    message = "Exported ${outFile.name} (${FormatUtils.formatBytes(outFile.length())})"
-                )
             }
 
             override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {

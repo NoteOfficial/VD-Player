@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -41,6 +43,7 @@ data class PlaybackUiState(
     val currentTitle: String = "",
     val currentArtist: String = "",
     val currentUri: String = "",
+    val currentAlbumArtUri: String? = null,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -82,6 +85,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _musicTab = MutableStateFlow(MusicSubTab.ALL_SONGS)
     val musicTab: StateFlow<MusicSubTab> = _musicTab.asStateFlow()
 
+    private val _rawVideos = MutableStateFlow<List<DeviceMediaItem>>(emptyList())
+    private val _rawSongs = MutableStateFlow<List<DeviceMediaItem>>(emptyList())
+
     private val _videos = MutableStateFlow<List<DeviceMediaItem>>(emptyList())
     val videos: StateFlow<List<DeviceMediaItem>> = _videos.asStateFlow()
 
@@ -91,6 +97,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _pickedVideoUris = MutableStateFlow<Set<String>>(emptySet())
     private val _pickedAudioUris = MutableStateFlow<Set<String>>(emptySet())
     private val _hasAudioPermission = MutableStateFlow(false)
+    private val _refreshTrigger = MutableStateFlow(0L)
 
     private val _playbackUi = MutableStateFlow(PlaybackUiState())
     val playbackUi: StateFlow<PlaybackUiState> = _playbackUi.asStateFlow()
@@ -107,20 +114,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         connectMediaController()
         viewModelScope.launch {
             combine(
-                prefsRepo.settingsFlow,
-                playbackHistory,
-                favorites,
-                songOverrides,
-                _pickedVideoUris
-            ) { s, hist, favs, _, pickedVid ->
-                Triple(s.persistedVideoFolderUris, hist.associateBy { it.mediaUri }, favs.map { it.itemKey }.toSet() to pickedVid)
-            }.collect { (folders, histMap, favAndPicked) ->
-                _videos.value = mediaRepo.loadVideoLibrary(
+                prefsRepo.settingsFlow.map { it.persistedVideoFolderUris }.distinctUntilChanged(),
+                _pickedVideoUris,
+                _refreshTrigger
+            ) { folders, pickedVid, _ ->
+                folders to pickedVid
+            }.collect { (folders, pickedVid) ->
+                _rawVideos.value = mediaRepo.loadRawVideos(
                     persistedFolderUris = folders,
-                    pickedVideoUris = favAndPicked.second,
-                    historyMap = histMap,
-                    favoriteKeys = favAndPicked.first
+                    pickedVideoUris = pickedVid
                 )
+            }
+        }
+
+        viewModelScope.launch {
+            combine(
+                _rawVideos,
+                playbackHistory,
+                favorites
+            ) { raw, hist, favs ->
+                mediaRepo.applyVideoMetadata(
+                    rawVideos = raw,
+                    historyMap = hist.associateBy { it.mediaUri },
+                    favoriteKeys = favs.map { it.itemKey }.toSet()
+                )
+            }.collect { merged ->
+                _videos.value = merged
             }
         }
 
@@ -128,22 +147,38 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             combine(
                 _hasAudioPermission,
                 _pickedAudioUris,
+                _refreshTrigger
+            ) { perm, picked, _ ->
+                perm to picked
+            }.collect { (perm, picked) ->
+                _rawSongs.value = mediaRepo.loadRawAudio(
+                    hasAudioPermission = perm,
+                    pickedAudioUris = picked
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            combine(
+                _rawSongs,
                 playbackHistory,
                 favorites,
                 songOverrides
-            ) { perm, picked, hist, favs, overrides ->
-                val list = mediaRepo.loadAudioLibrary(
-                    hasAudioPermission = perm,
-                    pickedAudioUris = picked,
+            ) { raw, hist, favs, overrides ->
+                mediaRepo.applyAudioMetadata(
+                    rawAudio = raw,
                     historyMap = hist.associateBy { it.mediaUri },
                     favoriteKeys = favs.map { it.itemKey }.toSet(),
                     overrides = overrides.associateBy { it.mediaUri }
                 )
-                list
-            }.collect { loadedSongs ->
-                _songs.value = loadedSongs
+            }.collect { merged ->
+                _songs.value = merged
             }
         }
+    }
+
+    fun refreshLibraries() {
+        _refreshTrigger.value = System.currentTimeMillis()
     }
 
     private fun connectMediaController() {
@@ -208,6 +243,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             currentArtist = item?.mediaMetadata?.artist?.toString().orEmpty(),
             currentUri = item?.requestMetadata?.mediaUri?.toString()
                 ?: item?.localConfiguration?.uri?.toString().orEmpty(),
+            currentAlbumArtUri = item?.mediaMetadata?.artworkUri?.toString(),
             isPlaying = ctrl.isPlaying,
             positionMs = ctrl.currentPosition.coerceAtLeast(0L),
             durationMs = ctrl.duration.coerceAtLeast(0L),
@@ -386,6 +422,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun observePlaylistItems(playlistId: Long): Flow<List<PlaylistItemEntity>> =
         playerDao.observePlaylistItems(playlistId)
+
+    fun removePlaylistItem(itemId: Long) {
+        viewModelScope.launch { playerDao.deletePlaylistItem(itemId) }
+    }
 
     fun deletePlaylist(playlistId: Long) {
         viewModelScope.launch { playerDao.deletePlaylist(playlistId) }
