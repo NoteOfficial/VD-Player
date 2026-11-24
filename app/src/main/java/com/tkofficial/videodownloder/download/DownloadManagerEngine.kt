@@ -3,6 +3,7 @@ package com.tkofficial.videodownloder.download
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
+import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -28,6 +29,7 @@ import com.tkofficial.videodownloder.database.SystemDao
 import com.tkofficial.videodownloder.models.AnalyzedMedia
 import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.models.MediaFormatOption
+import com.tkofficial.videodownloder.network.ApiConfigManager
 import com.tkofficial.videodownloder.notifications.NotificationHelper
 import com.tkofficial.videodownloder.services.DownloadForegroundService
 import com.tkofficial.videodownloder.utilities.FormatUtils
@@ -51,9 +53,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -128,7 +132,7 @@ class DownloadManagerEngine(
         val settings = prefsRepo.settingsFlow.first()
         latestSettings = settings
         if (settings.duplicateCheckEnabled) {
-            val existing = downloadDao.findByUrl(option.downloadUrl)
+            val existing = downloadDao.findByResolvedOrSourceUrl(option.downloadUrl)
             if (existing != null && existing.status in setOf("QUEUED", "DOWNLOADING", "PAUSED", "COMPLETED")) {
                 return@withContext Result.failure(
                     IllegalStateException("Duplicate link already exists in downloads (${existing.fileName}).")
@@ -382,22 +386,40 @@ class DownloadManagerEngine(
 
             val existingBytes = if (partFile.exists()) partFile.length() else 0L
             val canAttemptRange = existingBytes > 0L && entity.supportsRange
+            val referer = runCatching {
+                val u = URI(entity.url)
+                if (!u.scheme.isNullOrBlank() && !u.host.isNullOrBlank()) "${u.scheme}://${u.host}/" else null
+            }.getOrNull()
 
-            val reqBuilder = Request.Builder()
-                .url(entity.resolvedUrl)
-                .header("User-Agent", "VDPlayer/1.0 (Android)")
-            if (canAttemptRange) {
-                reqBuilder.header("Range", "bytes=$existingBytes-")
-            } else if (existingBytes > 0L) {
+            fun buildDownloadRequest(useRange: Boolean): Request {
+                return Request.Builder()
+                    .url(entity.resolvedUrl)
+                    .header("User-Agent", ApiConfigManager.BROWSER_USER_AGENT)
+                    .header("Accept", "*/*")
+                    .apply {
+                        if (referer != null) header("Referer", referer)
+                        if (useRange && existingBytes > 0L) header("Range", "bytes=$existingBytes-")
+                    }
+                    .build()
+            }
+
+            if (!canAttemptRange && existingBytes > 0L) {
                 partFile.delete()
             }
 
             val client = okHttpClient.newBuilder()
-                .connectTimeout(settings.requestTimeoutSeconds.toLong(), TimeUnit.SECONDS)
-                .readTimeout(settings.requestTimeoutSeconds.toLong(), TimeUnit.SECONDS)
+                .connectTimeout(settings.requestTimeoutSeconds.coerceIn(10, 120).toLong(), TimeUnit.SECONDS)
+                .readTimeout(settings.requestTimeoutSeconds.coerceIn(10, 120).toLong(), TimeUnit.SECONDS)
                 .build()
 
-            client.newCall(reqBuilder.build()).execute().use { response ->
+            var initialResponse = client.newCall(buildDownloadRequest(canAttemptRange)).execute()
+            if (initialResponse.code == 416 && canAttemptRange) {
+                initialResponse.close()
+                partFile.delete()
+                initialResponse = client.newCall(buildDownloadRequest(useRange = false)).execute()
+            }
+
+            initialResponse.use { response ->
                 if (!response.isSuccessful && response.code != 206) {
                     val reason = "HTTP ${response.code}: ${response.message.ifBlank { "Server rejected request" }}"
                     if (settings.autoRetryOnFailure && entity.retryCount < 2 && response.code in 500..599) {
@@ -434,8 +456,9 @@ class DownloadManagerEngine(
                 }
 
                 var downloadedSoFar = if (isResuming206) existingBytes else 0L
-                val buffer = ByteArray(16 * 1024)
+                val buffer = ByteArray(64 * 1024)
                 var lastUiUpdateMs = System.currentTimeMillis()
+                var lastDbBytes = downloadedSoFar
                 var lastNotifUpdateMs = 0L
                 var bytesInWindow = 0L
 
@@ -445,7 +468,7 @@ class DownloadManagerEngine(
                     if (partFile.exists()) partFile.delete()
                     null
                 }
-                val fos = if (raf == null) FileOutputStream(partFile, false) else null
+                val bos = if (raf == null) BufferedOutputStream(FileOutputStream(partFile, false), 64 * 1024) else null
 
                 try {
                     bodyStream.use { input ->
@@ -458,7 +481,7 @@ class DownloadManagerEngine(
                                 throw CancellationException("Job cancelled")
                             }
 
-                            if (raf != null) raf.write(buffer, 0, read) else fos?.write(buffer, 0, read)
+                            if (raf != null) raf.write(buffer, 0, read) else bos?.write(buffer, 0, read)
                             downloadedSoFar += read
                             bytesInWindow += read
                             speedBytes += read
@@ -475,7 +498,7 @@ class DownloadManagerEngine(
                             }
 
                             val now = System.currentTimeMillis()
-                            if (now - lastUiUpdateMs >= 400L) {
+                            if (now - lastUiUpdateMs >= 550L && downloadedSoFar > lastDbBytes) {
                                 val elapsedSec = ((now - lastUiUpdateMs).coerceAtLeast(1L)) / 1000.0
                                 val speed = (bytesInWindow / elapsedSec).toLong()
                                 val eta = if (totalBytes > downloadedSoFar && speed > 0L) {
@@ -490,8 +513,9 @@ class DownloadManagerEngine(
                                     eta = eta,
                                     supportsRange = supportsRange
                                 )
+                                lastDbBytes = downloadedSoFar
 
-                                if (latestSettings.notifyActiveDownloads && (now - lastNotifUpdateMs >= 750L)) {
+                                if (latestSettings.notifyActiveDownloads && (now - lastNotifUpdateMs >= 900L)) {
                                     notificationHelper.notifyDownloadProgress(
                                         entity.copy(
                                             status = "DOWNLOADING",
@@ -512,10 +536,11 @@ class DownloadManagerEngine(
                                 }
                             }
                         }
+                        bos?.flush()
                     }
                 } finally {
-                    raf?.close()
-                    fos?.close()
+                    runCatching { raf?.close() }
+                    runCatching { bos?.close() }
                 }
 
                 // Finalize file atomically
@@ -666,6 +691,14 @@ class DownloadManagerEngine(
                 height = height
             )
         )
+        runCatching {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(file.absolutePath),
+                arrayOf(entity.mimeType),
+                null
+            )
+        }
     }
 
     private fun canDownloadOnCurrentNetwork(wifiOnly: Boolean): Boolean {

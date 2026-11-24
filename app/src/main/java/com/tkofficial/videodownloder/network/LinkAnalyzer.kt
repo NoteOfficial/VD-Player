@@ -1,26 +1,46 @@
 package com.tkofficial.videodownloder.network
 
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.tkofficial.videodownloder.models.AnalyzedMedia
 import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.models.MediaFormatOption
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 class LinkAnalyzer(
     private val baseClient: OkHttpClient
 ) {
-    private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+    internal data class ExtractorOutcome(
+        val media: AnalyzedMedia? = null,
+        val errorReason: String? = null,
+        val isAuthFailure: Boolean = false
+    )
+
+    companion object {
+        internal const val BROWSER_USER_AGENT = ApiConfigManager.BROWSER_USER_AGENT
+        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        private val tolerantJson = Json { ignoreUnknownKeys = true; isLenient = true }
+    }
 
     fun buildClient(timeoutSeconds: Int, connectTimeoutSeconds: Int = 15): OkHttpClient {
         return baseClient.newBuilder()
@@ -148,13 +168,7 @@ class LinkAnalyzer(
         )
     }
 
-    private data class ExtractorOutcome(
-        val media: AnalyzedMedia? = null,
-        val errorReason: String? = null,
-        val isAuthFailure: Boolean = false
-    )
-
-    private suspend fun queryCustomExtractor(
+    private fun queryCustomExtractor(
         client: OkHttpClient,
         endpoint: String,
         apiKey: String,
@@ -163,82 +177,408 @@ class LinkAnalyzer(
         allowHttp: Boolean
     ): ExtractorOutcome {
         return runCatching {
-            val retrofit = Retrofit.Builder()
-                .baseUrl("https://localhost/")
-                .client(client)
-                .addConverterFactory(MoshiConverterFactory.create(moshi))
-                .build()
-            val service = retrofit.create(CustomExtractorService::class.java)
-            val auth = if (apiKey.isNotBlank()) "Bearer $apiKey" else null
-            val response = service.resolveMedia(
-                endpointUrl = endpoint,
-                authorization = auth,
-                apiVersion = apiVersion.ifBlank { "v1" },
-                request = ExtractorApiRequest(targetUrl)
+            val ver = apiVersion.ifBlank { "v1" }
+            val payloadJson = tolerantJson.encodeToString(
+                JsonObject.serializer(),
+                JsonObject(mapOf("url" to JsonPrimitive(targetUrl)))
             )
-            if (!response.isSuccessful) {
-                val isAuth = response.code() == 401 || response.code() == 403
-                val label = when {
-                    isAuth -> "Authentication Failed (HTTP ${response.code()})"
-                    response.code() == 451 -> "Download Blocked (HTTP 451)"
-                    else -> "API Connection Failed (HTTP ${response.code()})"
+
+            fun Request.Builder.withApiHeaders(): Request.Builder = apply {
+                header("User-Agent", BROWSER_USER_AGENT)
+                header("Accept", "application/json")
+                header("X-Api-Version", ver)
+                if (apiKey.isNotBlank()) {
+                    header("Authorization", "Bearer $apiKey")
+                    header("X-API-Key", apiKey)
                 }
-                return ExtractorOutcome(errorReason = label, isAuthFailure = isAuth)
             }
-            val body = response.body() ?: return ExtractorOutcome(errorReason = "API Connection Failed: Empty JSON body")
-            if (!body.error.isNullOrBlank()) {
-                return ExtractorOutcome(errorReason = body.error)
+
+            val postReq = Request.Builder()
+                .url(endpoint)
+                .post(payloadJson.toRequestBody(JSON_MEDIA_TYPE))
+                .withApiHeaders()
+                .build()
+
+            var statusCode: Int
+            var rawBody: String
+            client.newCall(postReq).execute().use { resp ->
+                statusCode = resp.code
+                rawBody = resp.body?.string().orEmpty()
             }
-            val opts = mutableListOf<MediaFormatOption>()
-            body.options?.forEachIndexed { idx, dto ->
-                val optUrl = dto.url?.trim().orEmpty()
-                if (FormatUtils.isValidDownloadUrl(optUrl, allowHttp = allowHttp)) {
-                    val mime = dto.mimeType ?: "video/mp4"
-                    opts += MediaFormatOption(
-                        id = "opt_$idx",
-                        label = dto.label ?: dto.quality ?: "Option ${idx + 1}",
-                        downloadUrl = optUrl,
-                        mimeType = mime,
-                        quality = dto.quality ?: "API Stream",
-                        estimatedBytes = dto.sizeBytes ?: -1L,
-                        supportsRange = true
+
+            // Fallback to GET ?url=... if endpoint rejects POST (405 / 404 / 501)
+            if (statusCode in listOf(404, 405, 501)) {
+                val sep = if (endpoint.contains('?')) "&" else "?"
+                val encodedTarget = URLEncoder.encode(targetUrl, "UTF-8")
+                val getReq = Request.Builder()
+                    .url("$endpoint${sep}url=$encodedTarget")
+                    .get()
+                    .withApiHeaders()
+                    .build()
+                client.newCall(getReq).execute().use { getResp ->
+                    statusCode = getResp.code
+                    rawBody = getResp.body?.string().orEmpty()
+                }
+            }
+
+            if (statusCode == 401 || statusCode == 403) {
+                return ExtractorOutcome(
+                    errorReason = "Authentication Failed (HTTP $statusCode)",
+                    isAuthFailure = true
+                )
+            }
+            if (statusCode == 451) {
+                return ExtractorOutcome(errorReason = "Download Blocked (HTTP 451)")
+            }
+            if (statusCode !in 200..299) {
+                val apiMsg = runCatching {
+                    val obj = tolerantJson.parseToJsonElement(rawBody) as? JsonObject
+                    extractErrorMessage(obj)
+                }.getOrNull()
+                return ExtractorOutcome(
+                    errorReason = apiMsg ?: "API Connection Failed (HTTP $statusCode)"
+                )
+            }
+
+            if (rawBody.isBlank()) {
+                return ExtractorOutcome(errorReason = "API Connection Failed: Empty JSON body")
+            }
+
+            val parsed = parseExtractorJson(
+                rawJson = rawBody,
+                endpoint = endpoint,
+                targetUrl = targetUrl,
+                allowHttp = allowHttp
+            )
+            if (parsed.errorReason != null || parsed.media == null) {
+                return parsed
+            }
+
+            // If API returned a single stream with unknown mime/size, do one fast optional probe without failing extraction
+            val media = parsed.media
+            if (media.options.size == 1 && media.options.first().mimeType == "application/octet-stream") {
+                val first = media.options.first()
+                val head = probeHeaders(client, first.downloadUrl)
+                if (head != null) {
+                    val refinedMime = head.mimeType.takeIf { !it.contains("text/html") } ?: first.mimeType
+                    val refinedOpt = first.copy(
+                        mimeType = refinedMime,
+                        estimatedBytes = if (first.estimatedBytes > 0) first.estimatedBytes else head.contentLength,
+                        supportsRange = head.supportsRange
+                    )
+                    return ExtractorOutcome(
+                        media = media.copy(
+                            totalBytes = refinedOpt.estimatedBytes,
+                            mimeType = refinedMime,
+                            mediaCategory = FormatUtils.classifyMimeType(refinedMime, media.title),
+                            supportsRange = refinedOpt.supportsRange,
+                            options = listOf(refinedOpt)
+                        )
                     )
                 }
             }
-            val singleUrl = body.url?.trim().orEmpty()
-            if (opts.isEmpty() && FormatUtils.isValidDownloadUrl(singleUrl, allowHttp = allowHttp)) {
-                val head = probeHeaders(client, singleUrl)
-                val mime = head?.mimeType ?: "video/mp4"
-                opts += MediaFormatOption(
-                    id = "api_primary",
-                    label = body.filename ?: "Primary Stream",
-                    downloadUrl = singleUrl,
-                    mimeType = mime,
-                    quality = "API Default",
-                    estimatedBytes = head?.contentLength ?: -1L,
-                    supportsRange = head?.supportsRange ?: false
-                )
-            }
-            if (opts.isEmpty()) {
-                return ExtractorOutcome(errorReason = "No downloadable stream returned by API")
-            }
-            val first = opts.first()
-            ExtractorOutcome(
-                media = AnalyzedMedia(
-                    sourceUrl = targetUrl,
-                    title = body.title ?: body.filename ?: deriveFileNameFromUrl(first.downloadUrl, first.mimeType),
-                    platform = "${FormatUtils.extractHost(targetUrl)} (API)",
-                    thumbnailUrl = body.thumbnail,
-                    durationMs = body.durationMs,
-                    totalBytes = first.estimatedBytes,
-                    mimeType = first.mimeType,
-                    mediaCategory = FormatUtils.classifyMimeType(first.mimeType, body.filename),
-                    supportsRange = first.supportsRange,
-                    options = opts
-                )
-            )
+            parsed
         }.getOrElse { err ->
             ExtractorOutcome(errorReason = "API Connection Failed: ${err.localizedMessage ?: "Network error"}")
+        }
+    }
+
+    internal fun parseExtractorJson(
+        rawJson: String,
+        endpoint: String,
+        targetUrl: String,
+        allowHttp: Boolean
+    ): ExtractorOutcome {
+        val rootElem = runCatching { tolerantJson.parseToJsonElement(rawJson) }.getOrNull()
+            ?: return ExtractorOutcome(errorReason = "API returned invalid JSON response")
+
+        val unwrapped = unwrapContainerObject(rootElem)
+        val rootObj = rootElem as? JsonObject
+
+        // Explicit failure payloads (e.g., {"error": "..."} or {"status": "error", "error": {"code": "..."}})
+        val rootErr = extractErrorMessage(unwrapped) ?: extractErrorMessage(rootObj)
+        val statusFlag = unwrapped?.str("status")?.lowercase() ?: rootObj?.str("status")?.lowercase()
+        val successFlag = unwrapped?.bool("success") ?: rootObj?.bool("success")
+
+        val collectedOptions = mutableListOf<MediaFormatOption>()
+        val seenUrls = linkedSetOf<String>()
+
+        fun addOptionIfValid(
+            rawCandidateUrl: String?,
+            label: String?,
+            quality: String?,
+            mimeHint: String?,
+            sizeBytes: Long
+        ) {
+            val trimmed = rawCandidateUrl?.trim().orEmpty()
+            if (trimmed.isBlank()) return
+            val resolved = resolveRelativeUrl(endpoint, trimmed)
+            if (!FormatUtils.isValidDownloadUrl(resolved, allowHttp = allowHttp)) return
+            if (!seenUrls.add(resolved)) return
+
+            val inferredMime = inferMimeType(mimeHint, resolved, label, quality)
+            val resolvedQuality = quality?.takeIf { it.isNotBlank() } ?: "API Stream"
+            val sizeText = if (sizeBytes > 0L) FormatUtils.formatBytes(sizeBytes) else null
+            val resolvedLabel = when {
+                !label.isNullOrBlank() && sizeText != null && !label.contains(sizeText) -> "$label ($sizeText)"
+                !label.isNullOrBlank() -> label
+                sizeText != null -> "$resolvedQuality • $sizeText"
+                else -> resolvedQuality
+            }
+
+            collectedOptions += MediaFormatOption(
+                id = "api_opt_${collectedOptions.size}",
+                label = resolvedLabel,
+                downloadUrl = resolved,
+                mimeType = inferredMime,
+                quality = resolvedQuality,
+                estimatedBytes = sizeBytes,
+                supportsRange = true
+            )
+        }
+
+        // Array keys commonly used by yt-dlp wrappers, Cobalt picker, and custom REST downloaders
+        val arrayKeys = listOf(
+            "options", "formats", "streams", "medias", "links",
+            "videos", "audio", "picker", "qualities", "downloads"
+        )
+        val searchObjects = listOfNotNull(unwrapped, rootObj).distinct()
+
+        for (obj in searchObjects) {
+            for (key in arrayKeys) {
+                val arr = obj[key] as? JsonArray ?: continue
+                arr.forEachIndexed { idx, item ->
+                    when (item) {
+                        is JsonPrimitive -> {
+                            addOptionIfValid(
+                                rawCandidateUrl = item.contentOrNull,
+                                label = "Stream ${idx + 1}",
+                                quality = if (key == "audio") "Audio" else "API Stream",
+                                mimeHint = if (key == "audio") "audio/mpeg" else null,
+                                sizeBytes = -1L
+                            )
+                        }
+                        is JsonObject -> {
+                            val ext = item.str("ext")?.lowercase()
+                            val protocol = item.str("protocol")?.lowercase()
+                            if (ext == "mhtml" || protocol == "mhtml") return@forEachIndexed
+
+                            val itemUrl = firstNonBlankStr(
+                                item,
+                                "url", "downloadUrl", "download_url", "videoUrl", "video_url",
+                                "audioUrl", "audio_url", "streamUrl", "stream_url", "link", "file", "src", "href", "uri"
+                            )
+                            val height = item.longVal("height")
+                            val quality = firstNonBlankStr(
+                                item,
+                                "quality", "resolution", "format_note", "format", "label", "type"
+                            ) ?: if (height != null && height > 0) "${height}p" else null
+                            val mime = firstNonBlankStr(
+                                item,
+                                "mimeType", "mime_type", "contentType", "content_type", "mime"
+                            ) ?: ext?.let { mimeFromExtension(it) }
+                                ?: if (key == "audio" || item.str("vcodec") == "none") "audio/mpeg" else null
+                            val label = firstNonBlankStr(item, "label", "format_note", "quality", "resolution", "name")
+                                ?: quality
+                            val size = firstPositiveLong(
+                                item,
+                                "sizeBytes", "size_bytes", "filesize", "filesize_approx",
+                                "size", "contentLength", "content_length"
+                            ) ?: -1L
+                            addOptionIfValid(itemUrl, label, quality, mime, size)
+                        }
+                        else -> Unit
+                    }
+                }
+            }
+        }
+
+        // Single-URL keys at unwrapped or root level (Cobalt redirect/tunnel or simple REST extractors)
+        val singleUrlKeys = listOf(
+            "url", "downloadUrl", "download_url", "videoUrl", "video_url",
+            "streamUrl", "stream_url", "link", "file", "href"
+        )
+        for (obj in searchObjects) {
+            val single = firstNonBlankStr(obj, *singleUrlKeys.toTypedArray())
+            if (single != null) {
+                val filename = firstNonBlankStr(obj, "filename", "fileName", "name")
+                val mime = firstNonBlankStr(obj, "mimeType", "mime_type", "contentType", "content_type", "mime")
+                    ?: obj.str("ext")?.let { mimeFromExtension(it) }
+                val quality = firstNonBlankStr(obj, "quality", "resolution", "status")
+                val size = firstPositiveLong(obj, "sizeBytes", "size_bytes", "filesize", "size", "contentLength") ?: -1L
+                addOptionIfValid(
+                    rawCandidateUrl = single,
+                    label = filename ?: quality ?: "Primary Stream",
+                    quality = quality ?: "API Default",
+                    mimeHint = mime,
+                    sizeBytes = size
+                )
+            }
+            // Separate audioUrl/audio string field
+            val audioDirect = firstNonBlankStr(obj, "audioUrl", "audio_url", "audio")
+            if (audioDirect != null && audioDirect.startsWith("http", ignoreCase = true)) {
+                addOptionIfValid(
+                    rawCandidateUrl = audioDirect,
+                    label = "Audio Track",
+                    quality = "Audio",
+                    mimeHint = "audio/mpeg",
+                    sizeBytes = -1L
+                )
+            }
+        }
+
+        // Also support top-level JsonArray of URL strings or format objects
+        if (collectedOptions.isEmpty() && rootElem is JsonArray) {
+            rootElem.forEachIndexed { idx, item ->
+                when (item) {
+                    is JsonPrimitive -> addOptionIfValid(item.contentOrNull, "Stream ${idx + 1}", "API Stream", null, -1L)
+                    is JsonObject -> {
+                        val u = firstNonBlankStr(item, *singleUrlKeys.toTypedArray())
+                        val q = firstNonBlankStr(item, "quality", "resolution", "label")
+                        val m = firstNonBlankStr(item, "mimeType", "mime_type", "mime")
+                        val sz = firstPositiveLong(item, "sizeBytes", "filesize", "size") ?: -1L
+                        addOptionIfValid(u, q, q, m, sz)
+                    }
+                    else -> Unit
+                }
+            }
+        }
+
+        if (collectedOptions.isEmpty()) {
+            val fallbackErr = when {
+                !rootErr.isNullOrBlank() -> rootErr
+                statusFlag == "error" || successFlag == false ->
+                    firstNonBlankStr(unwrapped ?: rootObj, "text", "message", "detail") ?: "API reported extraction error"
+                else -> "No downloadable stream returned by API"
+            }
+            return ExtractorOutcome(errorReason = fallbackErr)
+        }
+
+        val title = firstNonBlankStr(unwrapped, "title", "text", "filename", "fileName", "name")
+            ?: firstNonBlankStr(rootObj, "title", "text", "filename", "fileName", "name")
+        val rawThumb = firstNonBlankStr(unwrapped, "thumbnail", "thumb", "cover", "poster", "image", "pic")
+            ?: firstNonBlankStr(rootObj, "thumbnail", "thumb", "cover", "poster", "image", "pic")
+        val thumb = rawThumb?.let { resolveRelativeUrl(endpoint, it) }
+            ?.takeIf { FormatUtils.isValidDownloadUrl(it, allowHttp = allowHttp) }
+
+        val durationMs = extractDurationMs(unwrapped) ?: extractDurationMs(rootObj)
+        val first = collectedOptions.first()
+        val resolvedTitle = title ?: deriveFileNameFromUrl(first.downloadUrl, first.mimeType)
+
+        return ExtractorOutcome(
+            media = AnalyzedMedia(
+                sourceUrl = targetUrl,
+                title = resolvedTitle,
+                platform = "${FormatUtils.extractHost(targetUrl)} (API)",
+                thumbnailUrl = thumb,
+                durationMs = durationMs,
+                totalBytes = first.estimatedBytes,
+                mimeType = first.mimeType,
+                mediaCategory = FormatUtils.classifyMimeType(first.mimeType, resolvedTitle),
+                supportsRange = first.supportsRange,
+                options = collectedOptions
+            )
+        )
+    }
+
+    private fun unwrapContainerObject(element: JsonElement): JsonObject? {
+        var current = element as? JsonObject ?: return null
+        val wrapperKeys = listOf("data", "result", "response", "payload", "media")
+        repeat(4) {
+            val next = wrapperKeys.firstNotNullOfOrNull { k -> current[k] as? JsonObject } ?: return current
+            current = next
+        }
+        return current
+    }
+
+    private fun extractErrorMessage(obj: JsonObject?): String? {
+        if (obj == null) return null
+        val errElem = obj["error"]
+        when (errElem) {
+            is JsonPrimitive -> errElem.contentOrNull?.takeIf { it.isNotBlank() }?.let { return it }
+            is JsonObject -> {
+                firstNonBlankStr(errElem, "message", "text", "detail", "code")?.let { return it }
+            }
+            else -> Unit
+        }
+        firstNonBlankStr(obj, "errorMessage", "error_message", "detail")?.let { return it }
+        val status = obj.str("status")?.lowercase()
+        val success = obj.bool("success")
+        if (status == "error" || success == false) {
+            return firstNonBlankStr(obj, "message", "text", "reason")
+        }
+        return null
+    }
+
+    private fun JsonObject.str(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() && it != "null" }
+
+    private fun JsonObject.bool(key: String): Boolean? =
+        (this[key] as? JsonPrimitive)?.booleanOrNull
+
+    private fun JsonObject.longVal(key: String): Long? {
+        val prim = this[key] as? JsonPrimitive ?: return null
+        return prim.longOrNull ?: prim.doubleOrNull?.toLong()
+    }
+
+    private fun firstNonBlankStr(obj: JsonObject?, vararg keys: String): String? {
+        if (obj == null) return null
+        for (k in keys) {
+            val v = obj.str(k)
+            if (v != null) return v
+        }
+        return null
+    }
+
+    private fun firstPositiveLong(obj: JsonObject?, vararg keys: String): Long? {
+        if (obj == null) return null
+        for (k in keys) {
+            val v = obj.longVal(k)
+            if (v != null && v > 0L) return v
+        }
+        return null
+    }
+
+    private fun extractDurationMs(obj: JsonObject?): Long? {
+        if (obj == null) return null
+        obj.longVal("durationMs")?.takeIf { it > 0L }?.let { return it }
+        obj.longVal("duration_ms")?.takeIf { it > 0L }?.let { return it }
+        val sec = (obj["duration"] as? JsonPrimitive)?.doubleOrNull?.takeIf { it > 0.0 } ?: return null
+        return if (sec < 86_400.0) (sec * 1000.0).toLong() else sec.toLong()
+    }
+
+    private fun mimeFromExtension(ext: String): String = when (ext.lowercase().removePrefix(".")) {
+        "mp4", "m4v", "mov" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mkv" -> "video/x-matroska"
+        "mp3" -> "audio/mpeg"
+        "m4a", "aac" -> "audio/mp4"
+        "ogg", "opus" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        else -> "video/mp4"
+    }
+
+    private fun inferMimeType(mimeHint: String?, url: String, label: String?, quality: String?): String {
+        val cleanHint = mimeHint?.substringBefore(';')?.trim()?.lowercase()
+        if (!cleanHint.isNullOrBlank() && cleanHint.contains('/')) return cleanHint
+        val path = runCatching { URI(url).path.orEmpty() }.getOrDefault(url).lowercase()
+        val combined = "$path ${label.orEmpty()} ${quality.orEmpty()}".lowercase()
+        return when {
+            path.endsWith(".mp3") || combined.contains("mp3") -> "audio/mpeg"
+            path.endsWith(".m4a") || combined.contains("m4a") -> "audio/mp4"
+            path.endsWith(".ogg") || path.endsWith(".opus") -> "audio/ogg"
+            path.endsWith(".wav") -> "audio/wav"
+            path.endsWith(".webm") -> "video/webm"
+            path.endsWith(".mkv") -> "video/x-matroska"
+            path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
+            path.endsWith(".png") -> "image/png"
+            path.endsWith(".webp") -> "image/webp"
+            path.endsWith(".mp4") -> "video/mp4"
+            combined.contains("audio") -> "audio/mpeg"
+            else -> "video/mp4"
         }
     }
 
@@ -251,10 +591,17 @@ class LinkAnalyzer(
     )
 
     private fun probeHeaders(client: OkHttpClient, url: String): HeadProbeResult? {
+        val referer = runCatching {
+            val uri = URI(url)
+            if (!uri.scheme.isNullOrBlank() && !uri.host.isNullOrBlank()) "${uri.scheme}://${uri.host}/" else null
+        }.getOrNull()
+
         val headReq = Request.Builder()
             .url(url)
             .head()
-            .header("User-Agent", "VDPlayer/1.0 (Android)")
+            .header("User-Agent", BROWSER_USER_AGENT)
+            .header("Accept", "*/*")
+            .apply { if (referer != null) header("Referer", referer) }
             .build()
 
         runCatching {
@@ -281,7 +628,9 @@ class LinkAnalyzer(
             .url(url)
             .get()
             .header("Range", "bytes=0-0")
-            .header("User-Agent", "VDPlayer/1.0 (Android)")
+            .header("User-Agent", BROWSER_USER_AGENT)
+            .header("Accept", "*/*")
+            .apply { if (referer != null) header("Referer", referer) }
             .build()
 
         return runCatching {
@@ -308,7 +657,9 @@ class LinkAnalyzer(
         val req = Request.Builder()
             .url(pageUrl)
             .get()
-            .header("User-Agent", "VDPlayer/1.0 (Android)")
+            .header("User-Agent", BROWSER_USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Referer", pageUrl)
             .build()
 
         val html = runCatching {

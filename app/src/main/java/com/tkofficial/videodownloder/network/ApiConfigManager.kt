@@ -10,8 +10,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -57,6 +59,9 @@ class ApiConfigManager(
 ) {
     companion object {
         private const val ASSET_CONFIG_PATH = "configuration/app_settings.json"
+        internal const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val json = Json {
             ignoreUnknownKeys = true
             encodeDefaults = true
@@ -173,35 +178,79 @@ class ApiConfigManager(
         var lastError = ApiConfigStatus.CONNECTION_FAILED.code
         var lastStatus = ApiConfigStatus.CONNECTION_FAILED
         var lastCode: Int? = null
+        val versionHeader = settings.apiVersion.ifBlank { "v1" }
 
         for (endpoint in endpoints) {
+            val host = FormatUtils.extractHost(endpoint)
             val attempts = (settings.retryLimit.coerceIn(0, 3)) + 1
-            repeat(attempts) {
+            for (attempt in 0 until attempts) {
+                var stopEndpointRetries = false
                 val res = runCatching {
-                    val reqBuilder = Request.Builder()
+                    fun baseReq(): Request.Builder = Request.Builder()
                         .url(endpoint)
-                        .head()
-                        .header("User-Agent", "VDPlayer/1.0 (Android)")
-                        .header("X-Api-Version", settings.apiVersion.ifBlank { "v1" })
-                    if (decryptedApiKey.isNotBlank()) {
-                        reqBuilder.header("Authorization", "Bearer $decryptedApiKey")
-                    }
-                    client.newCall(reqBuilder.build()).execute().use { resp ->
-                        lastCode = resp.code
+                        .header("User-Agent", BROWSER_USER_AGENT)
+                        .header("Accept", "application/json")
+                        .header("X-Api-Version", versionHeader)
+                        .apply {
+                            if (decryptedApiKey.isNotBlank()) {
+                                header("Authorization", "Bearer $decryptedApiKey")
+                                header("X-API-Key", decryptedApiKey)
+                            }
+                        }
+
+                    // 1. Fast HEAD probe
+                    client.newCall(baseReq().head().build()).execute().use { headResp ->
+                        lastCode = headResp.code
                         when {
-                            resp.isSuccessful || resp.code == 405 -> return@withContext ApiTestResult(
-                                status = ApiConfigStatus.CONNECTED,
-                                message = "Connected / Ready (${FormatUtils.extractHost(endpoint)} • HTTP ${resp.code})",
-                                activeEndpoint = endpoint,
-                                httpCode = resp.code
-                            )
-                            resp.code == 401 || resp.code == 403 -> {
+                            headResp.isSuccessful || headResp.code == 405 -> {
+                                return@withContext ApiTestResult(
+                                    status = ApiConfigStatus.CONNECTED,
+                                    message = "Connected / Ready ($host • HTTP ${headResp.code})",
+                                    activeEndpoint = endpoint,
+                                    httpCode = headResp.code
+                                )
+                            }
+                            headResp.code == 401 || headResp.code == 403 -> {
                                 lastStatus = ApiConfigStatus.AUTH_FAILED
-                                lastError = "Authentication Failed (HTTP ${resp.code} at ${FormatUtils.extractHost(endpoint)})"
+                                lastError = "Authentication Failed (HTTP ${headResp.code} at $host)"
+                                stopEndpointRetries = true
+                            }
+                            headResp.code in listOf(400, 404, 415, 422, 501) -> {
+                                // Many POST-only extractor APIs (Cobalt, FastAPI, Express, CF Workers) reject HEAD.
+                                // Probe with a lightweight POST JSON validation payload before concluding failure.
+                                val postReq = baseReq()
+                                    .post("""{"url":""}""".toRequestBody(JSON_MEDIA_TYPE))
+                                    .build()
+                                client.newCall(postReq).execute().use { postResp ->
+                                    lastCode = postResp.code
+                                    val isJsonReply = postResp.header("Content-Type")
+                                        ?.contains("json", ignoreCase = true) == true
+                                    when {
+                                        postResp.isSuccessful ||
+                                            postResp.code == 405 ||
+                                            ((postResp.code == 400 || postResp.code == 422) && isJsonReply) -> {
+                                            return@withContext ApiTestResult(
+                                                status = ApiConfigStatus.CONNECTED,
+                                                message = "Connected / Ready ($host • HTTP ${postResp.code})",
+                                                activeEndpoint = endpoint,
+                                                httpCode = postResp.code
+                                            )
+                                        }
+                                        postResp.code == 401 || postResp.code == 403 -> {
+                                            lastStatus = ApiConfigStatus.AUTH_FAILED
+                                            lastError = "Authentication Failed (HTTP ${postResp.code} at $host)"
+                                            stopEndpointRetries = true
+                                        }
+                                        else -> {
+                                            lastStatus = ApiConfigStatus.CONNECTION_FAILED
+                                            lastError = "API Connection Failed (HTTP ${postResp.code} at $host)"
+                                        }
+                                    }
+                                }
                             }
                             else -> {
                                 lastStatus = ApiConfigStatus.CONNECTION_FAILED
-                                lastError = "API Connection Failed (HTTP ${resp.code} at ${FormatUtils.extractHost(endpoint)})"
+                                lastError = "API Connection Failed (HTTP ${headResp.code} at $host)"
                             }
                         }
                     }
@@ -210,6 +259,7 @@ class ApiConfigManager(
                     lastStatus = ApiConfigStatus.CONNECTION_FAILED
                     lastError = "API Connection Failed: ${err.localizedMessage ?: "Host unreachable"}"
                 }
+                if (stopEndpointRetries) break
             }
         }
 

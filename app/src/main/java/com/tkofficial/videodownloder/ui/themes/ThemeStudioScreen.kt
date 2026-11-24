@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,9 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -52,8 +51,11 @@ import com.tkofficial.videodownloder.models.NavStyle
 import com.tkofficial.videodownloder.models.ThemeConfig
 import com.tkofficial.videodownloder.models.ThemePreset
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.vaBouncePress
 import com.tkofficial.videodownloder.ui.profile.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,7 +88,7 @@ fun ThemeStudioScreen(
                 TopAppBar(
                     title = { Text(stringResource(R.string.menu_themes)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        VaIconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                         }
                     },
@@ -246,7 +248,7 @@ fun ThemeStudioScreen(
                 // Save & Reset
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
+                        VaOutlinedButton(
                             onClick = {
                                 draft = ThemeConfig()
                                 viewModel.resetThemeConfig()
@@ -283,9 +285,11 @@ private fun ColorSwatchRow(
     ) {
         swatches.forEach { hex ->
             val isSel = selected == hex
+            val swatchInteraction = remember { MutableInteractionSource() }
             Box(
                 modifier = Modifier
                     .size(36.dp)
+                    .vaBouncePress(swatchInteraction, 0.88f)
                     .clip(CircleShape)
                     .background(hex?.let { Color(it) } ?: Color.Gray.copy(alpha = 0.35f))
                     .border(
@@ -293,7 +297,11 @@ private fun ColorSwatchRow(
                         color = if (isSel) Color.White else Color.Gray,
                         shape = CircleShape
                     )
-                    .clickable { onSelect(hex) },
+                    .clickable(
+                        interactionSource = swatchInteraction,
+                        indication = androidx.compose.foundation.LocalIndication.current,
+                        onClick = { onSelect(hex) }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (hex == null) Text(stringResource(R.string.theme_auto), style = MaterialTheme.typography.labelSmall)

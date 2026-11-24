@@ -6,6 +6,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -36,18 +41,14 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -74,9 +75,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.tkofficial.videodownloder.core.findActivity
 import com.tkofficial.videodownloder.database.VaultMetadataEntity
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.profile.ProfileViewModel
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
@@ -127,16 +132,16 @@ fun VaultScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.vault_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
                     if (unlocked) {
-                        IconButton(onClick = viewModel::verifyVaultIntegrity) {
+                        VaIconButton(onClick = viewModel::verifyVaultIntegrity) {
                             Icon(Icons.Rounded.VerifiedUser, contentDescription = stringResource(R.string.vault_verify_integrity), tint = tokens.iconTint)
                         }
-                        IconButton(onClick = viewModel::lockVault) {
+                        VaIconButton(onClick = viewModel::lockVault) {
                             Icon(Icons.Rounded.Lock, contentDescription = stringResource(R.string.vault_lock), tint = tokens.danger)
                         }
                     }
@@ -146,120 +151,130 @@ fun VaultScreen(
         },
         containerColor = tokens.background
     ) { padding ->
-        if (!unlocked) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                VaCard(highlighted = true, modifier = Modifier.fillMaxWidth()) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = tokens.primaryAccent, modifier = Modifier.size(56.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = if (hasPinConfigured) stringResource(R.string.vault_enter_pin) else stringResource(R.string.vault_create_pin),
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = stringResource(R.string.vault_locked_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        OutlinedTextField(
-                            value = pinInput,
-                            onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) pinInput = it },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            singleLine = true,
-                            label = { Text(stringResource(R.string.pin_field_label)) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        VaPrimaryButton(
-                            text = if (hasPinConfigured) stringResource(R.string.vault_unlock_btn) else stringResource(R.string.vault_create_open_btn),
-                            icon = Icons.Rounded.LockOpen,
-                            onClick = {
-                                val candidate = pinInput
-                                pinInput = ""
-                                if (hasPinConfigured) {
-                                    scope.launch { viewModel.attemptPinUnlockAsync(candidate) }
-                                } else {
-                                    viewModel.setOrChangePin(candidate)
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        val activity = context.findActivity()
-                        if (hasPinConfigured && settings.biometricEnabled && activity != null) {
-                            val bioTitle = stringResource(R.string.biometric_vault_title)
-                            val bioSubtitle = stringResource(R.string.biometric_vault_subtitle)
-                            val bioNeg = stringResource(R.string.biometric_use_pin)
-                            Spacer(Modifier.height(10.dp))
-                            OutlinedButton(
+        AnimatedContent(
+            targetState = unlocked,
+            transitionSpec = {
+                if (tokens.reduceMotion) fadeIn() togetherWith fadeOut()
+                else (fadeIn() + scaleIn(initialScale = 0.96f)) togetherWith fadeOut()
+            },
+            label = "vault_lock_transition",
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) { isUnlocked ->
+            if (!isUnlocked) {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    VaCard(highlighted = true, modifier = Modifier.fillMaxWidth()) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Lock, contentDescription = null, tint = tokens.primaryAccent, modifier = Modifier.size(56.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = if (hasPinConfigured) stringResource(R.string.vault_enter_pin) else stringResource(R.string.vault_create_pin),
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text(
+                                text = stringResource(R.string.vault_locked_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = pinInput,
+                                onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) pinInput = it },
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.pin_field_label)) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            VaPrimaryButton(
+                                text = if (hasPinConfigured) stringResource(R.string.vault_unlock_btn) else stringResource(R.string.vault_create_open_btn),
+                                icon = Icons.Rounded.LockOpen,
                                 onClick = {
-                                    launchBiometricPrompt(
-                                        activity = activity,
-                                        title = bioTitle,
-                                        subtitle = bioSubtitle,
-                                        negativeText = bioNeg
-                                    ) { viewModel.unlockWithBiometricSuccess() }
+                                    val candidate = pinInput
+                                    pinInput = ""
+                                    if (hasPinConfigured) {
+                                        scope.launch { viewModel.attemptPinUnlockAsync(candidate) }
+                                    } else {
+                                        viewModel.setOrChangePin(candidate)
+                                    }
                                 },
-                                modifier = Modifier.fillMaxWidth().height(48.dp)
-                            ) {
-                                Icon(Icons.Rounded.Fingerprint, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.vault_unlock_biometric))
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            val activity = context.findActivity()
+                            if (hasPinConfigured && settings.biometricEnabled && activity != null) {
+                                val bioTitle = stringResource(R.string.biometric_vault_title)
+                                val bioSubtitle = stringResource(R.string.biometric_vault_subtitle)
+                                val bioNeg = stringResource(R.string.biometric_use_pin)
+                                Spacer(Modifier.height(10.dp))
+                                VaOutlinedButton(
+                                    onClick = {
+                                        launchBiometricPrompt(
+                                            activity = activity,
+                                            title = bioTitle,
+                                            subtitle = bioSubtitle,
+                                            negativeText = bioNeg
+                                        ) { viewModel.unlockWithBiometricSuccess() }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Fingerprint, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.vault_unlock_biometric))
+                                }
                             }
                         }
                     }
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    VaPrimaryButton(
-                        text = stringResource(R.string.vault_import_media),
-                        icon = Icons.Rounded.Add,
-                        onClick = {
-                            vaultPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (vaultItems.isEmpty()) {
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     item {
-                        VaCard {
-                            Text(
-                                stringResource(R.string.vault_empty_desc),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        VaPrimaryButton(
+                            text = stringResource(R.string.vault_import_media),
+                            icon = Icons.Rounded.Add,
+                            onClick = {
+                                vaultPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                } else {
-                    items(vaultItems, key = { it.id }) { item ->
-                        VaCard(
-                            onClick = { viewModel.openVaultItem(item) },
-                            contentPadding = PaddingValues(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Security, contentDescription = null, tint = tokens.primaryAccent)
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(item.originalName, style = MaterialTheme.typography.titleMedium)
-                                    Text(
-                                        "${item.mediaType} • ${FormatUtils.formatBytes(item.originalSizeBytes)} • AES-256-GCM",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                IconButton(onClick = { deleteConfirmItem = item }) {
-                                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
+
+                    if (vaultItems.isEmpty()) {
+                        item {
+                            VaCard {
+                                Text(
+                                    stringResource(R.string.vault_empty_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        items(vaultItems, key = { it.id }, contentType = { "vault_item" }) { item ->
+                            VaCard(
+                                onClick = { viewModel.openVaultItem(item) },
+                                contentPadding = PaddingValues(12.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Security, contentDescription = null, tint = tokens.primaryAccent)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.originalName, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            "${item.mediaType} • ${FormatUtils.formatBytes(item.originalSizeBytes)} • AES-256-GCM",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    VaIconButton(onClick = { deleteConfirmItem = item }) {
+                                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
+                                    }
                                 }
                             }
                         }
@@ -302,7 +317,7 @@ fun VaultScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-                IconButton(
+                VaIconButton(
                     onClick = viewModel::closeVaultPreview,
                     modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
                 ) {
@@ -318,13 +333,13 @@ fun VaultScreen(
             title = { Text(stringResource(R.string.confirm_delete_title)) },
             text = { Text(stringResource(R.string.vault_shred_confirm, item.originalName)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.deleteVaultItem(item)
                     deleteConfirmItem = null
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteConfirmItem = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { deleteConfirmItem = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -365,7 +380,7 @@ fun SecurityCenterScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.menu_security)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -393,11 +408,11 @@ fun SecurityCenterScreen(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Button(onClick = { showPinSetupDialog = true }) {
+                            VaButton(onClick = { showPinSetupDialog = true }) {
                                 Text(if (pinState.first != null) stringResource(R.string.sec_change) else stringResource(R.string.sec_set_pin))
                             }
                             if (pinState.first != null) {
-                                OutlinedButton(onClick = viewModel::disablePin) { Text(stringResource(R.string.btn_clear)) }
+                                VaOutlinedButton(onClick = viewModel::disablePin) { Text(stringResource(R.string.btn_clear)) }
                             }
                         }
                     }
@@ -455,7 +470,7 @@ fun SecurityCenterScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = viewModel::runIntegrityAudit) { Text(stringResource(R.string.sec_rerun_audit)) }
+                        VaOutlinedButton(onClick = viewModel::runIntegrityAudit) { Text(stringResource(R.string.sec_rerun_audit)) }
                     }
                 }
             }
@@ -477,13 +492,13 @@ fun SecurityCenterScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.setOrChangePin(newPin)
                     showPinSetupDialog = false
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showPinSetupDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { showPinSetupDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }

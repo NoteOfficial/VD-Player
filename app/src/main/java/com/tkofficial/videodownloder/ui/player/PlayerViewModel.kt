@@ -21,6 +21,7 @@ import com.tkofficial.videodownloder.models.AudioEqState
 import com.tkofficial.videodownloder.models.DeviceMediaItem
 import com.tkofficial.videodownloder.services.AudioEffectsBridge
 import com.tkofficial.videodownloder.services.PlaybackService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -122,13 +124,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 _refreshTrigger
             ) { vidPerm, folders, pickedVid, _ ->
                 Triple(vidPerm, folders, pickedVid)
-            }.collect { (vidPerm, folders, pickedVid) ->
-                _rawVideos.value = mediaRepo.loadRawVideos(
-                    hasVideoPermission = vidPerm,
-                    persistedFolderUris = folders,
-                    pickedVideoUris = pickedVid
-                )
             }
+                .distinctUntilChanged()
+                .map { (vidPerm, folders, pickedVid) ->
+                    mediaRepo.loadRawVideos(
+                        hasVideoPermission = vidPerm,
+                        persistedFolderUris = folders,
+                        pickedVideoUris = pickedVid
+                    )
+                }
+                .flowOn(Dispatchers.IO)
+                .collect { loaded ->
+                    _rawVideos.value = loaded
+                }
         }
 
         viewModelScope.launch {
@@ -142,9 +150,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     historyMap = hist.associateBy { it.mediaUri },
                     favoriteKeys = favs.map { it.itemKey }.toSet()
                 )
-            }.collect { merged ->
-                _videos.value = merged
             }
+                .flowOn(Dispatchers.Default)
+                .distinctUntilChanged()
+                .collect { merged ->
+                    _videos.value = merged
+                }
         }
 
         viewModelScope.launch {
@@ -154,12 +165,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 _refreshTrigger
             ) { perm, picked, _ ->
                 perm to picked
-            }.collect { (perm, picked) ->
-                _rawSongs.value = mediaRepo.loadRawAudio(
-                    hasAudioPermission = perm,
-                    pickedAudioUris = picked
-                )
             }
+                .distinctUntilChanged()
+                .map { (perm, picked) ->
+                    mediaRepo.loadRawAudio(
+                        hasAudioPermission = perm,
+                        pickedAudioUris = picked
+                    )
+                }
+                .flowOn(Dispatchers.IO)
+                .collect { loaded ->
+                    _rawSongs.value = loaded
+                }
         }
 
         viewModelScope.launch {
@@ -175,9 +192,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     favoriteKeys = favs.map { it.itemKey }.toSet(),
                     overrides = overrides.associateBy { it.mediaUri }
                 )
-            }.collect { merged ->
-                _songs.value = merged
             }
+                .flowOn(Dispatchers.Default)
+                .distinctUntilChanged()
+                .collect { merged ->
+                    _songs.value = merged
+                }
         }
     }
 
@@ -198,6 +218,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val listener = object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         syncControllerState()
+                        if (isPlaying) startProgressTicker() else stopProgressTicker()
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -219,7 +240,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 controllerListener = listener
                 ctrl.addListener(listener)
                 syncControllerState()
-                startProgressTicker()
+                if (ctrl.isPlaying) startProgressTicker()
                 val actions = pendingControllerActions.toList()
                 pendingControllerActions.clear()
                 actions.forEach { it(ctrl) }
@@ -237,18 +258,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun stopProgressTicker() {
+        progressTickerJob?.cancel()
+        progressTickerJob = null
+    }
+
     private fun startProgressTicker() {
         progressTickerJob?.cancel()
         progressTickerJob = viewModelScope.launch {
             while (true) {
                 delay(500L)
-                val ctrl = controller
-                if (ctrl != null && ctrl.mediaItemCount > 0) {
-                    _playbackUi.value = _playbackUi.value.copy(
-                        positionMs = ctrl.currentPosition.coerceAtLeast(0L),
-                        durationMs = ctrl.duration.coerceAtLeast(0L),
-                        isPlaying = ctrl.isPlaying
-                    )
+                val ctrl = controller ?: break
+                if (!ctrl.isPlaying) break
+                if (ctrl.mediaItemCount > 0) {
+                    val pos = ctrl.currentPosition.coerceAtLeast(0L)
+                    val dur = ctrl.duration.coerceAtLeast(0L)
+                    val cur = _playbackUi.value
+                    if (cur.positionMs != pos || cur.durationMs != dur || !cur.isPlaying) {
+                        _playbackUi.value = cur.copy(
+                            positionMs = pos,
+                            durationMs = dur,
+                            isPlaying = true
+                        )
+                    }
                 }
             }
         }

@@ -37,13 +37,10 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,9 +63,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.tkofficial.videodownloder.core.DeveloperIdentity
 import com.tkofficial.videodownloder.core.LocaleHelper
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaSectionTitle
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
 
@@ -162,7 +162,7 @@ fun ProfileScreen(
                 Spacer(Modifier.height(10.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
+                    VaOutlinedButton(
                         onClick = {
                             val opened = runCatching {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DeveloperIdentity.TELEGRAM_URL)))
@@ -185,7 +185,7 @@ fun ProfileScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    OutlinedButton(
+                    VaOutlinedButton(
                         onClick = {
                             val subject = LocaleHelper.getLocalizedString(
                                 context,
@@ -240,7 +240,7 @@ fun ProfileScreen(
                             Text(settings.userDisplayName, style = MaterialTheme.typography.titleMedium)
                         }
                     }
-                    TextButton(onClick = { showEditUserDialog = true }) {
+                    VaTextButton(onClick = { showEditUserDialog = true }) {
                         Text(stringResource(R.string.profile_edit))
                     }
                 }
@@ -299,7 +299,7 @@ fun ProfileScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     if (nameInput.isNotBlank()) {
                         viewModel.updateSettings { it.copy(userDisplayName = nameInput.trim()) }
                     }
@@ -307,7 +307,7 @@ fun ProfileScreen(
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showEditUserDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { showEditUserDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }

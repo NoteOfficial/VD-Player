@@ -4,6 +4,13 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,19 +45,15 @@ import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -71,9 +74,14 @@ import kotlinx.coroutines.withContext
 import com.example.R
 import com.tkofficial.videodownloder.models.FileEntry
 import com.tkofficial.videodownloder.models.MediaCategory
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaFolderCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.profile.ProfileViewModel
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
@@ -129,15 +137,15 @@ fun FileManagerScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.menu_file_manager)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleHiddenFiles() }) {
+                    VaIconButton(onClick = { viewModel.toggleHiddenFiles() }) {
                         Icon(if (showHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, contentDescription = stringResource(R.string.fm_toggle_hidden))
                     }
-                    IconButton(onClick = { showCreateFolder = true }) {
+                    VaIconButton(onClick = { showCreateFolder = true }) {
                         Icon(Icons.Rounded.CreateNewFolder, contentDescription = stringResource(R.string.fm_new_folder))
                     }
                 },
@@ -180,13 +188,13 @@ fun FileManagerScreen(
 
             Text(currentDir.absolutePath, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
-            if (selectedPaths.isNotEmpty()) {
+            AnimatedVisibility(visible = selectedPaths.isNotEmpty()) {
                 val chosen = filtered.filter { selectedPaths.contains(it.path) }
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(onClick = {
+                    VaOutlinedButton(onClick = {
                         viewModel.zipFileEntries(chosen, "archive_${System.currentTimeMillis()}.zip")
                         selectedPaths = emptySet()
                     }) {
@@ -194,8 +202,8 @@ fun FileManagerScreen(
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.fm_zip))
                     }
-                    OutlinedButton(onClick = { showBatchRename = true }) { Text(stringResource(R.string.fm_batch_rename)) }
-                    OutlinedButton(onClick = { confirmDeleteEntries = chosen }) {
+                    VaOutlinedButton(onClick = { showBatchRename = true }) { Text(stringResource(R.string.fm_batch_rename)) }
+                    VaOutlinedButton(onClick = { confirmDeleteEntries = chosen }) {
                         Icon(Icons.Rounded.Delete, contentDescription = null, tint = tokens.danger)
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.fm_delete_count, chosen.size))
@@ -204,9 +212,20 @@ fun FileManagerScreen(
             }
 
             Spacer(Modifier.height(8.dp))
+            AnimatedContent(
+                targetState = activeCategory to currentDir.absolutePath,
+                transitionSpec = {
+                    if (tokens.reduceMotion) {
+                        fadeIn() togetherWith fadeOut()
+                    } else {
+                        (slideInHorizontally { it / 5 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 5 } + fadeOut())
+                    }
+                },
+                label = "fm_folder_transition"
+            ) { (catState, _) ->
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                if (activeCategory == null && currentDir.parentFile != null && currentDir.absolutePath.contains("VDPlayer")) {
-                    item {
+                if (catState == null && currentDir.parentFile != null && currentDir.absolutePath.contains("VDPlayer")) {
+                    item(key = "fm_up_folder", contentType = "up_folder") {
                         VaCard(onClick = {
                             currentDir.parentFile?.let { viewModel.loadDirectory(it) }
                         }, contentPadding = PaddingValues(12.dp)) {
@@ -214,8 +233,17 @@ fun FileManagerScreen(
                         }
                     }
                 }
-                items(filtered, key = { it.path }) { entry ->
+                items(filtered, key = { it.path }, contentType = { if (it.isDirectory) "dir" else "file" }) { entry ->
                     val isSel = selectedPaths.contains(entry.path)
+                    if (entry.isDirectory && !isSel) {
+                        VaFolderCard(
+                            title = entry.name,
+                            subtitle = stringResource(R.string.fm_items_count, entry.childCount),
+                            icon = Icons.Rounded.Folder,
+                            onClick = { viewModel.loadDirectory(File(entry.path)) },
+                            modifier = Modifier.animateItem()
+                        )
+                    } else {
                     VaCard(
                         highlighted = isSel,
                         onClick = {
@@ -245,28 +273,30 @@ fun FileManagerScreen(
                             }
                             if (!entry.isDirectory) {
                                 if (entry.name.endsWith(".zip", true)) {
-                                    IconButton(onClick = { viewModel.extractZipEntry(entry) }) {
+                                    VaIconButton(onClick = { viewModel.extractZipEntry(entry) }) {
                                         Icon(Icons.Rounded.Unarchive, contentDescription = stringResource(R.string.fm_extract_zip))
                                     }
                                 }
-                                IconButton(onClick = { hashTarget = entry }) {
+                                VaIconButton(onClick = { hashTarget = entry }) {
                                     Icon(Icons.Rounded.Tag, contentDescription = stringResource(R.string.fm_file_hash))
                                 }
-                                IconButton(onClick = { viewModel.shareFileEntry(entry) }) {
+                                VaIconButton(onClick = { viewModel.shareFileEntry(entry) }) {
                                     Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
                                 }
                             }
-                            IconButton(onClick = { renameTarget = entry }) {
+                            VaIconButton(onClick = { renameTarget = entry }) {
                                 Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = stringResource(R.string.action_rename))
                             }
-                            IconButton(onClick = {
+                            VaIconButton(onClick = {
                                 selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
                             }) {
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.gallery_select), tint = if (isSel) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
+                    }
                 }
+            }
             }
         }
     }
@@ -278,12 +308,12 @@ fun FileManagerScreen(
             title = { Text(stringResource(R.string.fm_create_folder)) },
             text = { OutlinedTextField(value = folderName, onValueChange = { folderName = it }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.createFolder(folderName)
                     showCreateFolder = false
                 }) { Text(stringResource(R.string.btn_save)) }
             },
-            dismissButton = { TextButton(onClick = { showCreateFolder = false }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { showCreateFolder = false }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 
@@ -294,12 +324,12 @@ fun FileManagerScreen(
             title = { Text(stringResource(R.string.action_rename)) },
             text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.renameFileEntry(entry, newName)
                     renameTarget = null
                 }) { Text(stringResource(R.string.btn_save)) }
             },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 
@@ -327,7 +357,7 @@ fun FileManagerScreen(
                     }
                 }
             },
-            confirmButton = { Button(onClick = { hashTarget = null }) { Text(stringResource(R.string.btn_close)) } }
+            confirmButton = { VaButton(onClick = { hashTarget = null }) { Text(stringResource(R.string.btn_close)) } }
         )
     }
 
@@ -338,14 +368,14 @@ fun FileManagerScreen(
             title = { Text(stringResource(R.string.fm_batch_rename_title, selectedPaths.size)) },
             text = { OutlinedTextField(value = prefix, onValueChange = { prefix = it }, label = { Text(stringResource(R.string.fm_prefix)) }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     val chosen = filtered.filter { selectedPaths.contains(it.path) && !it.isDirectory }
                     viewModel.batchRenameEntries(chosen, prefix)
                     selectedPaths = emptySet()
                     showBatchRename = false
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { showBatchRename = false }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { showBatchRename = false }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 
@@ -355,13 +385,13 @@ fun FileManagerScreen(
             title = { Text(stringResource(R.string.confirm_delete_title)) },
             text = { Text(stringResource(R.string.fm_delete_perm_msg, itemsToDelete.size)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.deleteFileEntries(itemsToDelete)
                     selectedPaths = emptySet()
                     confirmDeleteEntries = null
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { confirmDeleteEntries = null }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { confirmDeleteEntries = null }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 }
@@ -391,7 +421,7 @@ fun StorageAnalyzerScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.menu_storage)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -427,7 +457,7 @@ fun StorageAnalyzerScreen(
                         Text(stringResource(R.string.storage_vault_enc, FormatUtils.formatBytes(s.vaultBytes)), style = MaterialTheme.typography.labelLarge)
                         Text(stringResource(R.string.storage_app_cache, FormatUtils.formatBytes(s.cacheBytes)), style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(10.dp))
-                        Button(onClick = { confirmClearCache = true }) { Text(stringResource(R.string.storage_clean_cache_btn, FormatUtils.formatBytes(s.cacheBytes))) }
+                        VaButton(onClick = { confirmClearCache = true }) { Text(stringResource(R.string.storage_clean_cache_btn, FormatUtils.formatBytes(s.cacheBytes))) }
                     }
                 }
 
@@ -475,12 +505,12 @@ fun StorageAnalyzerScreen(
             title = { Text(stringResource(R.string.storage_clean_cache_title)) },
             text = { Text(stringResource(R.string.storage_clean_cache_msg)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.clearAppCache()
                     confirmClearCache = false
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { confirmClearCache = false }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { confirmClearCache = false }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 }
@@ -504,15 +534,15 @@ fun NotificationCenterScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.notif_center_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::markAllNotificationsRead) {
+                    VaIconButton(onClick = viewModel::markAllNotificationsRead) {
                         Icon(Icons.Rounded.DoneAll, contentDescription = stringResource(R.string.notif_mark_all_read))
                     }
-                    IconButton(onClick = viewModel::clearNotifications) {
+                    VaIconButton(onClick = viewModel::clearNotifications) {
                         Icon(Icons.Rounded.DeleteSweep, contentDescription = stringResource(R.string.notif_clear_all))
                     }
                 },
@@ -533,7 +563,7 @@ fun NotificationCenterScreen(
                 VaCard { Text(stringResource(R.string.notif_empty), style = MaterialTheme.typography.bodyMedium) }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(displayed, key = { it.id }) { n ->
+                    items(displayed, key = { it.id }, contentType = { "notif_item" }) { n ->
                         VaCard(highlighted = !n.isRead, contentPadding = PaddingValues(12.dp), modifier = Modifier.animateItem()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Notifications, contentDescription = null, tint = tokens.iconTint)
@@ -588,7 +618,7 @@ fun BackupRestoreScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.menu_backup)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -617,7 +647,7 @@ fun BackupRestoreScreen(
                         onClick = { exportLauncher.launch("vd_player_backup_${System.currentTimeMillis()}.json") }
                     )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
+                    VaOutlinedButton(
                         onClick = { importLauncher.launch(arrayOf("application/json")) },
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
@@ -629,7 +659,7 @@ fun BackupRestoreScreen(
             }
             if (records.isNotEmpty()) {
                 item { Text(stringResource(R.string.backup_history_title), style = MaterialTheme.typography.titleMedium) }
-                items(records, key = { it.id }) { rec ->
+                items(records, key = { it.id }, contentType = { "backup_record" }) { rec ->
                     VaCard(contentPadding = PaddingValues(12.dp)) {
                         Text(rec.fileName, style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.backup_items_meta, rec.itemCount, rec.sha256Integrity.take(16)), style = MaterialTheme.typography.labelSmall)
@@ -645,12 +675,12 @@ fun BackupRestoreScreen(
             title = { Text(stringResource(R.string.backup_confirm_title)) },
             text = { Text(stringResource(R.string.backup_confirm_msg)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.restoreBackup(uri)
                     pendingRestoreUri = null
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { pendingRestoreUri = null }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { pendingRestoreUri = null }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 }
@@ -670,13 +700,13 @@ fun DownloadHistoryScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.qa_history)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
                     if (history.isNotEmpty()) {
-                        IconButton(onClick = { confirmClear = true }) {
+                        VaIconButton(onClick = { confirmClear = true }) {
                             Icon(Icons.Rounded.DeleteSweep, contentDescription = stringResource(R.string.history_clear_cd))
                         }
                     }
@@ -694,7 +724,7 @@ fun DownloadHistoryScreen(
             if (history.isEmpty()) {
                 item { VaCard { Text(stringResource(R.string.history_empty)) } }
             } else {
-                items(history, key = { it.id }) { h ->
+                items(history, key = { it.id }, contentType = { "download_history" }) { h ->
                     VaCard(contentPadding = PaddingValues(12.dp)) {
                         Text(h.fileName, style = MaterialTheme.typography.titleMedium)
                         Text("${h.platform} • ${h.status} • ${FormatUtils.formatBytes(h.fileSize)}", style = MaterialTheme.typography.labelSmall)
@@ -711,12 +741,12 @@ fun DownloadHistoryScreen(
             title = { Text(stringResource(R.string.confirm_delete_title)) },
             text = { Text(stringResource(R.string.history_clear_msg)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.clearDownloadHistory()
                     confirmClear = false
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.btn_cancel)) } }
+            dismissButton = { VaTextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.btn_cancel)) } }
         )
     }
 }

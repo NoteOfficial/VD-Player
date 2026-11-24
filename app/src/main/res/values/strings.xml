@@ -678,4 +678,5 @@
     <string name="set_quick_theme">Quick Theme &amp; Appearance</string>
     <string name="set_open_theme_studio">Open Theme Studio</string>
     <string name="gallery_device_item_note">Device media is managed via Android Gallery. Copy to an album or move a copy to Vault.</string>
+    <string name="api_http_blocked_hint">Cleartext HTTP endpoint detected. Enable Allow HTTP in Network Settings or use https://.</string>
 </resources>

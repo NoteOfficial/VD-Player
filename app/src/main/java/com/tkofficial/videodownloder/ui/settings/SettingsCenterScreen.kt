@@ -9,6 +9,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,14 +52,13 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -92,12 +97,13 @@ import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.models.AspectRatioMode
 import com.tkofficial.videodownloder.models.DecoderMode
 import com.tkofficial.videodownloder.models.ThemePreset
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import com.tkofficial.videodownloder.network.ApiConfigManager
 import com.tkofficial.videodownloder.network.ApiConfigStatus
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
 import com.tkofficial.videodownloder.ui.components.VaLogoEmblem
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
 import com.tkofficial.videodownloder.ui.profile.ProfileViewModel
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
@@ -212,7 +218,7 @@ fun SettingsCenterScreen(
                     Text(activeSection?.let { stringResource(it.titleRes) } ?: stringResource(R.string.menu_settings))
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    VaIconButton(onClick = {
                         if (activeSection != null && initialSection == "hub") {
                             activeSection = null
                         } else {
@@ -227,13 +233,26 @@ fun SettingsCenterScreen(
         },
         containerColor = tokens.background
     ) { padding ->
-        if (activeSection == null) {
+        AnimatedContent(
+            targetState = activeSection,
+            transitionSpec = {
+                if (tokens.reduceMotion) {
+                    fadeIn() togetherWith fadeOut()
+                } else if (targetState != null) {
+                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                } else {
+                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                }
+            },
+            label = "settings_section_transition"
+        ) { currentSection ->
+        if (currentSection == null) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(SettingsSection.entries) { sec ->
+                items(SettingsSection.entries, key = { it.id }, contentType = { "settings_sec" }) { sec ->
                     val title = stringResource(sec.titleRes)
                     VaCard(
                         onClick = { activeSection = sec },
@@ -256,7 +275,7 @@ fun SettingsCenterScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    when (activeSection!!) {
+                    when (currentSection) {
                         SettingsSection.GENERAL -> VaCard {
                             var name by remember(settings.userDisplayName) { mutableStateOf(settings.userDisplayName) }
                             OutlinedTextField(
@@ -267,7 +286,7 @@ fun SettingsCenterScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { viewModel.updateSettings { it.copy(userDisplayName = name.ifBlank { "Media Explorer" }) } }) {
+                            VaButton(onClick = { viewModel.updateSettings { it.copy(userDisplayName = name.ifBlank { "Media Explorer" }) } }) {
                                 Text(stringResource(R.string.set_update_greeting))
                             }
                             Spacer(Modifier.height(12.dp))
@@ -324,7 +343,7 @@ fun SettingsCenterScreen(
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
-                            OutlinedButton(
+                            VaOutlinedButton(
                                 onClick = onOpenThemeStudio,
                                 modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
                             ) {
@@ -502,7 +521,7 @@ fun SettingsCenterScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(6.dp))
-                            Button(onClick = { viewModel.updateSettings { it.copy(browserHomeUrl = homeUrl.trim()) } }) {
+                            VaButton(onClick = { viewModel.updateSettings { it.copy(browserHomeUrl = homeUrl.trim()) } }) {
                                 Text(stringResource(R.string.set_save_home_url))
                             }
                             SettingSwitch(stringResource(R.string.set_enable_js), settings.browserJavaScriptEnabled) { v ->
@@ -536,6 +555,7 @@ fun SettingsCenterScreen(
 
                         SettingsSection.API -> VaCard {
                             var apiEnabled by remember(settings.apiEnabled) { mutableStateOf(settings.apiEnabled) }
+                            var userToggledApiOff by remember { mutableStateOf(false) }
                             var primaryEndpoint by remember(settings.customExtractorEndpoint) { mutableStateOf(settings.customExtractorEndpoint) }
                             var secondaryEndpoint by remember(settings.secondaryExtractorEndpoint) { mutableStateOf(settings.secondaryExtractorEndpoint) }
                             var backupEndpoint by remember(settings.backupExtractorEndpoint) { mutableStateOf(settings.backupExtractorEndpoint) }
@@ -589,16 +609,36 @@ fun SettingsCenterScreen(
                                 Text(res.message, style = MaterialTheme.typography.labelSmall, color = chipColor)
                             }
                             Spacer(Modifier.height(8.dp))
-                            SettingSwitch(stringResource(R.string.api_enable_service), apiEnabled) { apiEnabled = it }
+                            SettingSwitch(stringResource(R.string.api_enable_service), apiEnabled) { checked ->
+                                apiEnabled = checked
+                                userToggledApiOff = !checked
+                            }
                             Spacer(Modifier.height(6.dp))
                             OutlinedTextField(
                                 value = primaryEndpoint,
-                                onValueChange = { primaryEndpoint = it },
+                                onValueChange = { nextVal ->
+                                    val wasBlank = primaryEndpoint.isBlank()
+                                    primaryEndpoint = nextVal
+                                    if (wasBlank && nextVal.isNotBlank() && !userToggledApiOff) {
+                                        apiEnabled = true
+                                    }
+                                },
                                 label = { Text(stringResource(R.string.set_api_endpoint)) },
                                 placeholder = { Text("https://api.example.com/v1/resolve") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth().testTag("api_primary_input")
                             )
+                            val usesHttpWhileBlocked = !settings.allowCleartextHttp && listOf(
+                                primaryEndpoint, secondaryEndpoint, backupEndpoint
+                            ).any { it.trim().startsWith("http://", ignoreCase = true) }
+                            if (usesHttpWhileBlocked) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = stringResource(R.string.api_http_blocked_hint),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.warning
+                                )
+                            }
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = secondaryEndpoint,
@@ -658,7 +698,7 @@ fun SettingsCenterScreen(
 
                             Spacer(Modifier.height(10.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                Button(
+                                VaButton(
                                     onClick = {
                                         viewModel.saveFullApiConfig(
                                             enabled = apiEnabled,
@@ -677,7 +717,7 @@ fun SettingsCenterScreen(
                                 ) {
                                     Text(stringResource(R.string.set_api_save), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     enabled = !isTestingApi,
                                     onClick = {
                                         viewModel.testApiConnection(
@@ -703,13 +743,13 @@ fun SettingsCenterScreen(
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     onClick = { apiImportLauncher.launch(arrayOf("application/json")) },
                                     modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
                                 ) {
                                     Text(stringResource(R.string.api_import_json), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     onClick = { apiExportLauncher.launch("app_settings.json") },
                                     modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
                                 ) {
@@ -717,7 +757,7 @@ fun SettingsCenterScreen(
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
-                            OutlinedButton(
+                            VaOutlinedButton(
                                 onClick = {
                                     clearSavedKey = false
                                     apiKey = ""
@@ -759,7 +799,7 @@ fun SettingsCenterScreen(
                                 val missingAll = LocaleHelper.allMissingRuntimePermissions(context)
                                 if (missingAll.isNotEmpty()) {
                                     Spacer(Modifier.height(10.dp))
-                                    Button(
+                                    VaButton(
                                         onClick = { grantAllLauncher.launch(missingAll) },
                                         modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
                                     ) {
@@ -806,14 +846,14 @@ fun SettingsCenterScreen(
                         SettingsSection.STORAGE -> VaCard {
                             Text(stringResource(R.string.set_storage_desc))
                             Spacer(Modifier.height(10.dp))
-                            Button(onClick = onOpenStorageAnalyzer) { Text(stringResource(R.string.set_open_storage)) }
+                            VaButton(onClick = onOpenStorageAnalyzer) { Text(stringResource(R.string.set_open_storage)) }
                         }
 
                         SettingsSection.LANGUAGE -> VaCard {
                             Text(stringResource(R.string.set_language_title), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(10.dp))
                             AppLanguage.entries.forEach { lang ->
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     onClick = { viewModel.setLanguage(lang) },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -829,7 +869,7 @@ fun SettingsCenterScreen(
                         SettingsSection.BACKUP -> VaCard {
                             Text(stringResource(R.string.set_backup_desc))
                             Spacer(Modifier.height(10.dp))
-                            Button(onClick = onOpenBackupRestore) { Text(stringResource(R.string.set_open_backup)) }
+                            VaButton(onClick = onOpenBackupRestore) { Text(stringResource(R.string.set_open_backup)) }
                         }
 
                         SettingsSection.ACCESSIBILITY -> VaCard {
@@ -847,7 +887,7 @@ fun SettingsCenterScreen(
                         SettingsSection.MAINTENANCE -> VaCard {
                             Text(stringResource(R.string.set_maint_desc))
                             Spacer(Modifier.height(10.dp))
-                            Button(onClick = viewModel::clearAppCache) { Text(stringResource(R.string.set_clear_cache_now)) }
+                            VaButton(onClick = viewModel::clearAppCache) { Text(stringResource(R.string.set_clear_cache_now)) }
                         }
 
                         SettingsSection.ABOUT -> VaCard {
@@ -871,7 +911,7 @@ fun SettingsCenterScreen(
                             )
                             Spacer(Modifier.height(12.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     onClick = {
                                         val opened = runCatching {
                                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DeveloperIdentity.TELEGRAM_URL)))
@@ -890,7 +930,7 @@ fun SettingsCenterScreen(
                                     Spacer(Modifier.width(6.dp))
                                     Text(stringResource(R.string.btn_open_telegram), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                OutlinedButton(
+                                VaOutlinedButton(
                                     onClick = {
                                         val subject = LocaleHelper.getLocalizedString(
                                             context,
@@ -919,13 +959,14 @@ fun SettingsCenterScreen(
                                 }
                             }
                             Spacer(Modifier.height(10.dp))
-                            Button(onClick = onOpenLegal, modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)) {
+                            VaButton(onClick = onOpenLegal, modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)) {
                                 Text(stringResource(R.string.menu_legal))
                             }
                         }
                     }
                 }
             }
+        }
         }
     }
 }
@@ -953,10 +994,10 @@ private fun PermissionStatusRow(
         if (!granted) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onRequest, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+                VaButton(onClick = onRequest, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
                     Text(stringResource(R.string.perm_request_btn))
                 }
-                OutlinedButton(onClick = onOpenSettings, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+                VaOutlinedButton(onClick = onOpenSettings, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
                     Text(stringResource(R.string.perm_open_settings))
                 }
             }

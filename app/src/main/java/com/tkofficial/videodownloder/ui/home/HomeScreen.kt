@@ -112,11 +112,15 @@ import com.tkofficial.videodownloder.models.AnalyzedMedia
 import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.models.MediaFormatOption
 import com.tkofficial.videodownloder.models.UiState
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
 import com.tkofficial.videodownloder.ui.components.VaLogoEmblem
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.components.VaSectionTitle
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import java.io.File
@@ -258,13 +262,13 @@ fun HomeScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
+                    VaIconButton(
                         onClick = { showSearchBar = !showSearchBar },
                         modifier = Modifier.size(48.dp).testTag("home_search_btn")
                     ) {
                         Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.cd_search), tint = tokens.iconTint)
                     }
-                    IconButton(
+                    VaIconButton(
                         onClick = onOpenNotifications,
                         modifier = Modifier.size(48.dp).testTag("home_notifications_btn")
                     ) {
@@ -278,13 +282,13 @@ fun HomeScreen(
                             Icon(Icons.Rounded.Notifications, contentDescription = stringResource(R.string.cd_notifications), tint = tokens.iconTint)
                         }
                     }
-                    IconButton(
+                    VaIconButton(
                         onClick = onOpenProfile,
                         modifier = Modifier.size(48.dp).testTag("home_profile_btn")
                     ) {
                         Icon(Icons.Rounded.Person, contentDescription = stringResource(R.string.cd_profile), tint = tokens.iconTint)
                     }
-                    IconButton(
+                    VaIconButton(
                         onClick = onOpenSettings,
                         modifier = Modifier.size(48.dp).testTag("home_settings_btn")
                     ) {
@@ -308,7 +312,7 @@ fun HomeScreen(
                         )
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
+                            VaButton(onClick = {
                                 val toAsk = LocaleHelper.allMissingRuntimePermissions(context)
                                 if (toAsk.isNotEmpty()) {
                                     multiPermLauncher.launch(toAsk)
@@ -319,7 +323,7 @@ fun HomeScreen(
                                 Text(stringResource(R.string.perm_grant_all_btn))
                             }
                             if (permPromptAttempted) {
-                                OutlinedButton(onClick = { context.openAppDetailsSettings() }) {
+                                VaOutlinedButton(onClick = { context.openAppDetailsSettings() }) {
                                     Text(stringResource(R.string.perm_open_settings))
                                 }
                             }
@@ -330,8 +334,8 @@ fun HomeScreen(
         }
 
         // Search Bar
-        if (showSearchBar) {
-            item {
+        item(key = "home_search_bar_holder", contentType = "search_bar") {
+            AnimatedVisibility(visible = showSearchBar) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = viewModel::setSearchQuery,
@@ -340,7 +344,7 @@ fun HomeScreen(
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                            VaIconButton(onClick = { viewModel.setSearchQuery("") }) {
                                 Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.btn_clear))
                             }
                         }
@@ -410,7 +414,7 @@ fun HomeScreen(
                     shape = RoundedCornerShape(tokens.smallRadius),
                     trailingIcon = {
                         Row {
-                            IconButton(
+                            VaIconButton(
                                 onClick = {
                                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
@@ -421,7 +425,7 @@ fun HomeScreen(
                                 Icon(Icons.Rounded.ContentPaste, contentDescription = stringResource(R.string.btn_paste), tint = tokens.iconTint)
                             }
                             if (urlInput.isNotEmpty()) {
-                                IconButton(
+                                VaIconButton(
                                     onClick = { viewModel.clearAnalysis() },
                                     modifier = Modifier.testTag("clear_url_btn")
                                 ) {
@@ -507,7 +511,7 @@ fun HomeScreen(
                 Triple(stringResource(R.string.qa_notifications), Icons.Rounded.Notifications, onOpenNotifications)
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(quickItems) { (label, icon, action) ->
+                items(quickItems, key = { it.first }, contentType = { "quick_access" }) { (label, icon, action) ->
                     val isSelectedFilter = (label == stringResource(R.string.qa_video_dl) && filterCategory == MediaCategory.VIDEO) ||
                         (label == stringResource(R.string.qa_audio_dl) && filterCategory == MediaCategory.AUDIO) ||
                         (label == stringResource(R.string.qa_image_dl) && filterCategory == MediaCategory.IMAGE)
@@ -607,7 +611,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            items(rawList, key = { it.id }) { item ->
+            items(rawList, key = { it.id }, contentType = { it.status }) { item ->
                 Box(modifier = Modifier.animateItem()) {
                     DownloadItemCard(
                         item = item,
@@ -651,13 +655,13 @@ fun HomeScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.renameDownload(target.id, newName)
                     renameTarget = null
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -669,13 +673,13 @@ fun HomeScreen(
             title = { Text(stringResource(R.string.confirm_delete_title)) },
             text = { Text(stringResource(R.string.home_delete_file_prompt, target.fileName)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.deleteDownload(target.id, deleteFile = true)
                     deleteTarget = null
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -715,7 +719,7 @@ fun HomeScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { detailsTarget = null }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { detailsTarget = null }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -730,7 +734,7 @@ fun HomeScreen(
                     Text(stringResource(R.string.home_schedule_choose_delay, media.title))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(5L, 15L, 60L).forEach { mins ->
-                            OutlinedButton(onClick = {
+                            VaOutlinedButton(onClick = {
                                 viewModel.enqueueAnalyzedOption(media, option, scheduleMinutes = mins)
                                 scheduleTarget = null
                             }) {
@@ -742,7 +746,7 @@ fun HomeScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { scheduleTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { scheduleTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -768,8 +772,15 @@ private fun AnalyzedMediaPreview(
     VaCard(contentPadding = PaddingValues(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (media.thumbnailUrl != null) {
+                val thumbCtx = LocalContext.current
+                val thumbReq = remember(media.thumbnailUrl) {
+                    ImageRequest.Builder(thumbCtx)
+                        .data(media.thumbnailUrl)
+                        .size(256)
+                        .build()
+                }
                 AsyncImage(
-                    model = media.thumbnailUrl,
+                    model = thumbReq,
                     contentDescription = media.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp))
@@ -840,7 +851,7 @@ private fun AnalyzedMediaPreview(
                 modifier = Modifier.weight(1f),
                 testTag = "confirm_download_btn"
             )
-            OutlinedButton(
+            VaOutlinedButton(
                 onClick = { onScheduleOption(selectedOption) },
                 modifier = Modifier.height(50.dp),
                 shape = RoundedCornerShape(tokens.smallRadius)
@@ -1011,7 +1022,7 @@ private fun ActionIconBtn(
     onClick: () -> Unit,
     tint: Color = LocalVaTokens.current.iconTint
 ) {
-    IconButton(
+    VaIconButton(
         onClick = onClick,
         modifier = Modifier.size(48.dp)
     ) {

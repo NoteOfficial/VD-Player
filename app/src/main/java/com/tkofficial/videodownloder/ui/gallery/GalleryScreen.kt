@@ -5,6 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,7 +36,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -56,18 +62,14 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Slideshow
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -103,7 +105,11 @@ import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.database.AlbumEntity
 import com.tkofficial.videodownloder.database.DownloadedMediaEntity
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.delay
@@ -230,18 +236,18 @@ fun GalleryScreen(
             }
             Row {
                 if (photosForSlideshow.isNotEmpty()) {
-                    IconButton(onClick = {
+                    VaIconButton(onClick = {
                         slideshowIndex = 0
                         slideshowActive = true
                     }) {
                         Icon(Icons.Rounded.Slideshow, contentDescription = stringResource(R.string.gallery_slideshow), tint = tokens.iconTint)
                     }
                 }
-                IconButton(onClick = { showSearch = !showSearch }) {
+                VaIconButton(onClick = { showSearch = !showSearch }) {
                     Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.cd_search), tint = tokens.iconTint)
                 }
                 Box {
-                    IconButton(onClick = { showSortMenu = true }) {
+                    VaIconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = stringResource(R.string.gallery_sort), tint = tokens.iconTint)
                     }
                     DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
@@ -256,10 +262,10 @@ fun GalleryScreen(
                         }
                     }
                 }
-                IconButton(onClick = viewModel::refreshMedia) {
+                VaIconButton(onClick = viewModel::refreshMedia) {
                     Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
                 }
-                IconButton(onClick = viewModel::toggleViewMode) {
+                VaIconButton(onClick = viewModel::toggleViewMode) {
                     Icon(
                         if (isGrid) Icons.Rounded.ViewList else Icons.Rounded.GridView,
                         contentDescription = stringResource(R.string.gallery_toggle_view),
@@ -281,10 +287,10 @@ fun GalleryScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { mediaPermLauncher.launch(LocaleHelper.galleryMediaPermissions()) }) {
+                        VaButton(onClick = { mediaPermLauncher.launch(LocaleHelper.galleryMediaPermissions()) }) {
                             Text(stringResource(R.string.gallery_scan_btn))
                         }
-                        OutlinedButton(onClick = { context.openAppDetailsSettings() }) {
+                        VaOutlinedButton(onClick = { context.openAppDetailsSettings() }) {
                             Text(stringResource(R.string.perm_open_settings))
                         }
                     }
@@ -292,16 +298,18 @@ fun GalleryScreen(
             }
         }
 
-        if (showSearch) {
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = viewModel::setSearchQuery,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.gallery_search_hint)) },
-                singleLine = true,
-                shape = RoundedCornerShape(tokens.smallRadius)
-            )
+        AnimatedVisibility(visible = showSearch) {
+            Column {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = viewModel::setSearchQuery,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.gallery_search_hint)) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(tokens.smallRadius)
+                )
+            }
         }
 
         // Section Chips
@@ -330,33 +338,35 @@ fun GalleryScreen(
         }
 
         // Multi-Select Toolbar
-        if (selectedIds.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            VaCard(highlighted = true, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(stringResource(R.string.gallery_selected_count, selectedIds.size), style = MaterialTheme.typography.titleMedium)
-                    Row {
-                        if (section == GallerySection.TRASH) {
-                            IconButton(onClick = { viewModel.restoreFromTrash(selectedIds.toList()) }) {
-                                Icon(Icons.Rounded.RestoreFromTrash, contentDescription = stringResource(R.string.gallery_restore))
+        AnimatedVisibility(visible = selectedIds.isNotEmpty()) {
+            Column {
+                Spacer(Modifier.height(8.dp))
+                VaCard(highlighted = true, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(stringResource(R.string.gallery_selected_count, selectedIds.size), style = MaterialTheme.typography.titleMedium)
+                        Row {
+                            if (section == GallerySection.TRASH) {
+                                VaIconButton(onClick = { viewModel.restoreFromTrash(selectedIds.toList()) }) {
+                                    Icon(Icons.Rounded.RestoreFromTrash, contentDescription = stringResource(R.string.gallery_restore))
+                                }
+                                VaIconButton(onClick = { confirmPermanentDeleteIds = selectedIds.toList() }) {
+                                    Icon(Icons.Rounded.DeleteForever, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
+                                }
+                            } else {
+                                VaIconButton(onClick = { moveAlbumTargetIds = selectedIds.toList() }) {
+                                    Icon(Icons.Rounded.DriveFileMove, contentDescription = stringResource(R.string.gallery_move_album))
+                                }
+                                VaIconButton(onClick = { viewModel.moveToTrash(selectedIds.toList()) }) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
+                                }
                             }
-                            IconButton(onClick = { confirmPermanentDeleteIds = selectedIds.toList() }) {
-                                Icon(Icons.Rounded.DeleteForever, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
+                            VaIconButton(onClick = viewModel::clearSelection) {
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_clear))
                             }
-                        } else {
-                            IconButton(onClick = { moveAlbumTargetIds = selectedIds.toList() }) {
-                                Icon(Icons.Rounded.DriveFileMove, contentDescription = stringResource(R.string.gallery_move_album))
-                            }
-                            IconButton(onClick = { viewModel.moveToTrash(selectedIds.toList()) }) {
-                                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
-                            }
-                        }
-                        IconButton(onClick = viewModel::clearSelection) {
-                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_clear))
                         }
                     }
                 }
@@ -366,75 +376,95 @@ fun GalleryScreen(
         Spacer(Modifier.height(10.dp))
 
         // Albums Header when in ALBUMS section
-        if (section == GallerySection.ALBUMS && selectedAlbumId == null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.gallery_albums_count, albums.size), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { showNewAlbumDialog = true }) {
-                    Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.gallery_new_album))
+        AnimatedContent(
+            targetState = if (section == GallerySection.ALBUMS) (selectedAlbumId ?: -1L) else Long.MIN_VALUE,
+            transitionSpec = {
+                if (tokens.reduceMotion) {
+                    fadeIn() togetherWith fadeOut()
+                } else {
+                    (slideInHorizontally { it / 4 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 4 } + fadeOut())
                 }
-            }
-            if (albums.isNotEmpty()) {
+            },
+            label = "gallery_album_header"
+        ) { albumState ->
+        if (albumState == -1L) {
+            Column {
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    albums.forEach { album ->
-                        VaCard(
-                            onClick = { viewModel.selectAlbum(album.id) },
-                            contentPadding = PaddingValues(10.dp),
-                            modifier = Modifier.width(136.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(78.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(tokens.elevatedSurface),
-                                contentAlignment = Alignment.Center
+                    Text(stringResource(R.string.gallery_albums_count, albums.size), style = MaterialTheme.typography.titleMedium)
+                    VaTextButton(onClick = { showNewAlbumDialog = true }) {
+                        Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.gallery_new_album))
+                    }
+                }
+                if (albums.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        albums.forEach { album ->
+                            VaCard(
+                                onClick = { viewModel.selectAlbum(album.id) },
+                                contentPadding = PaddingValues(10.dp),
+                                modifier = Modifier.width(136.dp)
                             ) {
-                                if (album.coverUri != null) {
-                                    AsyncImage(
-                                        model = Uri.parse(album.coverUri),
-                                        contentDescription = album.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = tokens.iconTint)
-                                }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(album.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                IconButton(
-                                    onClick = {
-                                        albumCoverTarget = album
-                                        coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                    },
-                                    modifier = Modifier.size(32.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(78.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(tokens.elevatedSurface),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.gallery_album_cover), modifier = Modifier.size(16.dp))
+                                    if (album.coverUri != null) {
+                                        val coverReq = remember(album.coverUri) {
+                                            ImageRequest.Builder(context)
+                                                .data(Uri.parse(album.coverUri))
+                                                .size(320)
+                                                .build()
+                                        }
+                                        AsyncImage(
+                                            model = coverReq,
+                                            contentDescription = album.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = tokens.iconTint)
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(album.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    VaIconButton(
+                                        onClick = {
+                                            albumCoverTarget = album
+                                            coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.gallery_album_cover), modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
                 }
-                Spacer(Modifier.height(10.dp))
             }
-        } else if (section == GallerySection.ALBUMS && selectedAlbumId != null) {
-            TextButton(onClick = { viewModel.selectAlbum(null) }) {
+        } else if (albumState > 0L) {
+            VaTextButton(onClick = { viewModel.selectAlbum(null) }) {
                 Text(stringResource(R.string.gallery_all_albums_back))
             }
+        }
         }
 
         // Media Grid / List
@@ -457,7 +487,7 @@ fun GalleryScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(mediaList, key = { it.id }) { item ->
+                items(mediaList, key = { it.id }, contentType = { it.mediaType }) { item ->
                     val isSelected = selectedIds.contains(item.id)
                     Box(
                         modifier = Modifier
@@ -507,9 +537,9 @@ fun GalleryScreen(
                                 modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp)
                             )
                         }
-                        IconButton(
+                        VaIconButton(
                             onClick = { viewModel.toggleSelection(item.id) },
-                            modifier = Modifier.align(Alignment.TopStart).size(32.dp)
+                            modifier = Modifier.align(Alignment.TopStart).size(36.dp)
                         ) {
                             Icon(
                                 Icons.Rounded.CheckCircle,
@@ -543,7 +573,7 @@ fun GalleryScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(mediaList, key = { it.id }) { item ->
+                items(mediaList, key = { it.id }, contentType = { it.mediaType }) { item ->
                     VaCard(
                         onClick = {
                             if (item.mediaType == "VIDEO") {
@@ -577,14 +607,14 @@ fun GalleryScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            IconButton(onClick = { viewModel.toggleFavorite(item) }) {
+                            VaIconButton(onClick = { viewModel.toggleFavorite(item) }) {
                                 Icon(
                                     if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                     contentDescription = stringResource(R.string.gallery_favorite),
                                     tint = if (item.isFavorite) tokens.danger else tokens.iconTint
                                 )
                             }
-                            IconButton(onClick = { viewModel.shareItem(item) }) {
+                            VaIconButton(onClick = { viewModel.shareItem(item) }) {
                                 Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
                             }
                         }
@@ -626,8 +656,14 @@ fun GalleryScreen(
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                val slideReq = remember(current.id, current.filePath, current.contentUri) {
+                    ImageRequest.Builder(context)
+                        .data(mediaModelData(current))
+                        .size(1920)
+                        .build()
+                }
                 AsyncImage(
-                    model = mediaModelData(current),
+                    model = slideReq,
                     contentDescription = current.title,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
@@ -642,7 +678,7 @@ fun GalleryScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("${current.title} (${slideshowIndex + 1}/${photosForSlideshow.size})", color = Color.White)
-                    IconButton(onClick = { slideshowActive = false }) {
+                    VaIconButton(onClick = { slideshowActive = false }) {
                         Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close), tint = Color.White)
                     }
                 }
@@ -665,13 +701,13 @@ fun GalleryScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.createAlbum(albumName)
                     showNewAlbumDialog = false
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showNewAlbumDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { showNewAlbumDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -683,14 +719,14 @@ fun GalleryScreen(
             title = { Text(stringResource(R.string.action_rename)) },
             text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.renameItem(target, name)
                     renameTarget = null
                     viewerItem = null
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -705,7 +741,7 @@ fun GalleryScreen(
                         Text(stringResource(R.string.gallery_create_album_first))
                     } else {
                         albums.forEach { album ->
-                            TextButton(
+                            VaTextButton(
                                 onClick = {
                                     viewModel.moveSelectedToAlbum(album.id)
                                     moveAlbumTargetIds = null
@@ -720,7 +756,7 @@ fun GalleryScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { moveAlbumTargetIds = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { moveAlbumTargetIds = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -738,7 +774,7 @@ fun GalleryScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { detailsTarget = null }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { detailsTarget = null }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -749,13 +785,13 @@ fun GalleryScreen(
             title = { Text(stringResource(R.string.confirm_delete_title)) },
             text = { Text(stringResource(R.string.confirm_delete_message)) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.deletePermanently(ids)
                     confirmPermanentDeleteIds = null
                 }) { Text(stringResource(R.string.btn_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmPermanentDeleteIds = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { confirmPermanentDeleteIds = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -795,8 +831,15 @@ private fun FullscreenImageViewerDialog(
                     }
                 }
         ) {
+            val viewerContext = LocalContext.current
+            val viewerReq = remember(item.id, item.filePath, item.contentUri) {
+                ImageRequest.Builder(viewerContext)
+                    .data(mediaModelData(item))
+                    .size(1920)
+                    .build()
+            }
             AsyncImage(
-                model = mediaModelData(item),
+                model = viewerReq,
                 contentDescription = item.title,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -819,7 +862,7 @@ private fun FullscreenImageViewerDialog(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(item.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                IconButton(onClick = onDismiss) {
+                VaIconButton(onClick = onDismiss) {
                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close), tint = Color.White)
                 }
             }
@@ -833,29 +876,29 @@ private fun FullscreenImageViewerDialog(
                     .padding(vertical = 8.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                IconButton(onClick = onFavorite) {
+                VaIconButton(onClick = onFavorite) {
                     Icon(
                         if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                         contentDescription = stringResource(R.string.gallery_favorite),
                         tint = if (item.isFavorite) Color.Red else Color.White
                     )
                 }
-                IconButton(onClick = onShare) {
+                VaIconButton(onClick = onShare) {
                     Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share), tint = Color.White)
                 }
-                IconButton(onClick = onRename) {
+                VaIconButton(onClick = onRename) {
                     Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = stringResource(R.string.action_rename), tint = Color.White)
                 }
-                IconButton(onClick = onCopy) {
+                VaIconButton(onClick = onCopy) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = stringResource(R.string.gallery_copy), tint = Color.White)
                 }
-                IconButton(onClick = onMoveToVault) {
+                VaIconButton(onClick = onMoveToVault) {
                     Icon(Icons.Rounded.Lock, contentDescription = stringResource(R.string.gallery_move_to_vault), tint = Color.White)
                 }
-                IconButton(onClick = onDetails) {
+                VaIconButton(onClick = onDetails) {
                     Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.action_details), tint = Color.White)
                 }
-                IconButton(onClick = onDelete) {
+                VaIconButton(onClick = onDelete) {
                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = Color(0xFFFF6B6B))
                 }
             }

@@ -8,6 +8,8 @@ import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.decode.VideoFrameDecoder
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.tkofficial.videodownloder.data.PreferencesRepository
 import com.tkofficial.videodownloder.database.AppDatabase
 import com.tkofficial.videodownloder.download.DownloadManagerEngine
@@ -135,6 +137,18 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.20)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("coil_image_cache"))
+                    .maxSizeBytes(96L * 1024L * 1024L)
+                    .build()
+            }
+            .respectCacheHeaders(false)
             .components {
                 if (Build.VERSION.SDK_INT >= 28) {
                     add(ImageDecoderDecoder.Factory())
@@ -143,7 +157,7 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
                 }
                 add(VideoFrameDecoder.Factory())
             }
-            .crossfade(true)
+            .crossfade(120)
             .build()
     }
 }

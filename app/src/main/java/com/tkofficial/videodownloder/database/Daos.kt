@@ -31,6 +31,9 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE url = :url AND status != 'CANCELLED' LIMIT 1")
     suspend fun findByUrl(url: String): DownloadEntity?
 
+    @Query("SELECT * FROM downloads WHERE (resolvedUrl = :targetUrl OR url = :targetUrl) AND status != 'CANCELLED' LIMIT 1")
+    suspend fun findByResolvedOrSourceUrl(targetUrl: String): DownloadEntity?
+
     @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY priority DESC, createdAt ASC")
     suspend fun getQueuedOnce(): List<DownloadEntity>
 

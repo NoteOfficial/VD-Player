@@ -53,20 +53,17 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -87,8 +84,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.tkofficial.videodownloder.core.LocaleHelper
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import kotlinx.coroutines.launch
 
@@ -176,7 +176,7 @@ fun BrowserScreen(
                 ),
                 shape = RoundedCornerShape(tokens.smallRadius),
                 trailingIcon = {
-                    IconButton(onClick = {
+                    VaIconButton(onClick = {
                         viewModel.toggleBookmark(currentTab.title, currentTab.url)
                     }) {
                         Icon(
@@ -188,14 +188,14 @@ fun BrowserScreen(
                 }
             )
             Spacer(Modifier.width(4.dp))
-            IconButton(onClick = { showTabsDialog = true }, modifier = Modifier.size(48.dp)) {
+            VaIconButton(onClick = { showTabsDialog = true }, modifier = Modifier.size(48.dp)) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.Tab, contentDescription = stringResource(R.string.browser_tabs), tint = tokens.iconTint)
                     Text(tabs.size.toString(), style = MaterialTheme.typography.labelSmall)
                 }
             }
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(48.dp)) {
+                VaIconButton(onClick = { showMenu = true }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.browser_more), tint = tokens.iconTint)
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -419,22 +419,22 @@ fun BrowserScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() }) {
+            VaIconButton(onClick = { if (webViewRef?.canGoBack() == true) webViewRef?.goBack() }) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = tokens.iconTint)
             }
-            IconButton(onClick = { if (webViewRef?.canGoForward() == true) webViewRef?.goForward() }) {
+            VaIconButton(onClick = { if (webViewRef?.canGoForward() == true) webViewRef?.goForward() }) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.browser_forward), tint = tokens.iconTint)
             }
-            IconButton(onClick = { webViewRef?.reload() }) {
+            VaIconButton(onClick = { webViewRef?.reload() }) {
                 Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
             }
-            IconButton(onClick = {
+            VaIconButton(onClick = {
                 viewModel.updateActiveTab(url = settings.browserHomeUrl)
                 webViewRef?.loadUrl(settings.browserHomeUrl)
             }) {
                 Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.browser_home), tint = tokens.iconTint)
             }
-            IconButton(onClick = { onSendToDownloader(currentTab.url) }) {
+            VaIconButton(onClick = { onSendToDownloader(currentTab.url) }) {
                 Icon(Icons.Rounded.Download, contentDescription = stringResource(R.string.browser_send_to_dl), tint = tokens.primaryAccent)
             }
         }
@@ -450,7 +450,7 @@ fun BrowserScreen(
                 Text(stringResource(R.string.browser_detected_media_title, detectedMedia.size), style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(280.dp)) {
-                    items(detectedMedia, key = { it.url }) { media ->
+                    items(detectedMedia, key = { it.url }, contentType = { "detected_media" }) { media ->
                         VaCard(contentPadding = PaddingValues(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
@@ -460,7 +460,7 @@ fun BrowserScreen(
                                     VaStatusChip(media.mimeType, tokens.tertiaryAccent)
                                 }
                                 Spacer(Modifier.width(8.dp))
-                                Button(onClick = {
+                                VaButton(onClick = {
                                     showDetectedSheet = false
                                     onSendToDownloader(media.url)
                                 }) {
@@ -481,7 +481,7 @@ fun BrowserScreen(
             title = { Text(stringResource(R.string.browser_tabs_title, tabs.size)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    VaButton(
                         onClick = {
                             viewModel.openNewTab(settings.browserHomeUrl)
                             showTabsDialog = false
@@ -511,7 +511,7 @@ fun BrowserScreen(
                                 color = if (idx == activeIdx) tokens.primaryAccent else MaterialTheme.colorScheme.onSurface
                             )
                             if (tabs.size > 1) {
-                                IconButton(onClick = { viewModel.closeTab(idx) }) {
+                                VaIconButton(onClick = { viewModel.closeTab(idx) }) {
                                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.browser_close_tab))
                                 }
                             }
@@ -519,7 +519,7 @@ fun BrowserScreen(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showTabsDialog = false }) { Text(stringResource(R.string.btn_close)) } }
+            confirmButton = { VaTextButton(onClick = { showTabsDialog = false }) { Text(stringResource(R.string.btn_close)) } }
         )
     }
 
@@ -533,7 +533,7 @@ fun BrowserScreen(
                     if (bookmarks.isEmpty()) {
                         item { Text(stringResource(R.string.browser_no_bookmarks)) }
                     } else {
-                        items(bookmarks, key = { it.id }) { bm ->
+                        items(bookmarks, key = { it.id }, contentType = { "bookmark" }) { bm ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -549,7 +549,7 @@ fun BrowserScreen(
                                     Text(bm.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(bm.url, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                IconButton(onClick = { viewModel.toggleBookmark(bm.title, bm.url) }) {
+                                VaIconButton(onClick = { viewModel.toggleBookmark(bm.title, bm.url) }) {
                                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.vp_remove))
                                 }
                             }
@@ -557,7 +557,7 @@ fun BrowserScreen(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showBookmarksDialog = false }) { Text(stringResource(R.string.btn_close)) } }
+            confirmButton = { VaTextButton(onClick = { showBookmarksDialog = false }) { Text(stringResource(R.string.btn_close)) } }
         )
     }
 
@@ -571,7 +571,7 @@ fun BrowserScreen(
                     if (history.isEmpty()) {
                         item { Text(stringResource(R.string.browser_no_history)) }
                     } else {
-                        items(history, key = { it.id }) { entry ->
+                        items(history, key = { it.id }, contentType = { "history" }) { entry ->
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -592,9 +592,9 @@ fun BrowserScreen(
             confirmButton = {
                 Row {
                     if (history.isNotEmpty()) {
-                        TextButton(onClick = viewModel::clearHistory) { Text(stringResource(R.string.btn_clear)) }
+                        VaTextButton(onClick = viewModel::clearHistory) { Text(stringResource(R.string.btn_clear)) }
                     }
-                    TextButton(onClick = { showHistoryDialog = false }) { Text(stringResource(R.string.btn_close)) }
+                    VaTextButton(onClick = { showHistoryDialog = false }) { Text(stringResource(R.string.btn_close)) }
                 }
             }
         )

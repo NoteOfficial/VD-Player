@@ -2,6 +2,7 @@ package com.tkofficial.videodownloder.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -17,31 +18,40 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonColors
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -49,6 +59,118 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
+
+fun Modifier.vaBouncePress(
+    interactionSource: MutableInteractionSource,
+    pressedScale: Float = 0.955f
+): Modifier = composed {
+    val tokens = LocalVaTokens.current
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && !tokens.reduceMotion) pressedScale else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "va_bounce_press"
+    )
+    this.graphicsLayer {
+        if (!tokens.reduceMotion) {
+            scaleX = scale
+            scaleY = scale
+        }
+    }
+}
+
+@Composable
+fun VaButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = ButtonDefaults.shape,
+    colors: ButtonColors = ButtonDefaults.buttonColors(),
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Button(
+        onClick = onClick,
+        modifier = modifier.vaBouncePress(interactionSource, 0.955f),
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun VaOutlinedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = ButtonDefaults.outlinedShape,
+    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
+    border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled),
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.vaBouncePress(interactionSource, 0.96f),
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        border = border,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun VaTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    shape: Shape = ButtonDefaults.textShape,
+    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.vaBouncePress(interactionSource, 0.94f),
+        enabled = enabled,
+        shape = shape,
+        colors = colors,
+        contentPadding = contentPadding,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+@Composable
+fun VaIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: IconButtonColors = IconButtonDefaults.iconButtonColors(),
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.vaBouncePress(interactionSource, 0.88f),
+        enabled = enabled,
+        colors = colors,
+        interactionSource = interactionSource,
+        content = content
+    )
+}
 
 @Composable
 fun VaCard(
@@ -65,7 +187,7 @@ fun VaCard(
     val pressed by interactionSource.collectIsPressedAsState()
 
     val pressScale by animateFloatAsState(
-        targetValue = if (onClick != null && pressed && !tokens.reduceMotion) 0.975f else 1f,
+        targetValue = if (onClick != null && pressed && !tokens.reduceMotion) 0.972f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -74,7 +196,7 @@ fun VaCard(
     )
 
     val targetBorder = when {
-        pressed && onClick != null -> tokens.primaryAccent.copy(alpha = 0.65f)
+        pressed && onClick != null -> tokens.primaryAccent.copy(alpha = 0.68f)
         highlighted -> tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
         else -> tokens.borderSubtle
     }
@@ -132,52 +254,96 @@ fun VaFolderCard(
     highlighted: Boolean = false
 ) {
     val tokens = LocalVaTokens.current
-    VaCard(
-        modifier = modifier,
-        onClick = onClick,
-        highlighted = highlighted,
-        contentPadding = PaddingValues(12.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (pressed && !tokens.reduceMotion) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "folder_card_scale"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (pressed && !tokens.reduceMotion) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "folder_icon_scale"
+    )
+    val chevronOffset by animateDpAsState(
+        targetValue = if (pressed && !tokens.reduceMotion) 4.dp else 0.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "folder_chevron_offset"
+    )
+    val shape = RoundedCornerShape(tokens.cardRadius)
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            pressed -> tokens.primaryAccent.copy(alpha = 0.72f)
+            highlighted -> tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
+            else -> tokens.borderSubtle
+        },
+        animationSpec = tween(durationMillis = if (tokens.reduceMotion) 0 else 160),
+        label = "folder_border"
+    )
+
+    Row(
+        modifier = modifier
+            .graphicsLayer {
+                if (!tokens.reduceMotion) {
+                    scaleX = cardScale
+                    scaleY = cardScale
+                }
+            }
+            .clip(shape)
+            .background(tokens.surfaceGradient, shape)
+            .border(BorderStroke(1.dp, borderColor), shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
+                onClick = onClick
+            )
+            .padding(12.dp)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .graphicsLayer {
+                    if (!tokens.reduceMotion) {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    }
+                }
+                .clip(RoundedCornerShape(12.dp))
+                .background(tokens.primaryAccent.copy(alpha = if (pressed) 0.24f else 0.14f)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(tokens.primaryAccent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tokens.primaryAccent,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
             Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = tokens.primaryAccent,
+                modifier = Modifier.size(24.dp)
             )
         }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = if (pressed) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.offset(x = chevronOffset)
+        )
     }
 }
 
@@ -194,8 +360,11 @@ fun VaPrimaryButton(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && !tokens.reduceMotion) 0.96f else 1f,
-        animationSpec = tween(durationMillis = tokens.animDurationMs.coerceAtMost(140)),
+        targetValue = if (pressed && !tokens.reduceMotion) 0.955f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "btn_scale"
     )
 
@@ -214,8 +383,10 @@ fun VaPrimaryButton(
         modifier = modifier
             .height(50.dp)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                if (!tokens.reduceMotion) {
+                    scaleX = scale
+                    scaleY = scale
+                }
             }
             .let { if (testTag.isNotEmpty()) it.testTag(testTag) else it }
     ) {

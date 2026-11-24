@@ -13,6 +13,10 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,14 +40,11 @@ import androidx.compose.material.icons.rounded.GifBox
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.VideoFile
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -72,6 +73,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
@@ -80,7 +82,10 @@ import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.media.MediaInfoSnapshot
 import com.tkofficial.videodownloder.media.StudioJobState
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
@@ -149,7 +154,7 @@ fun MediaStudioScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.menu_media_studio)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    VaIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -196,7 +201,7 @@ fun MediaStudioScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Spacer(Modifier.height(8.dp))
-                                OutlinedButton(onClick = engine::cancelTransformation) { Text(stringResource(R.string.action_cancel)) }
+                                VaOutlinedButton(onClick = engine::cancelTransformation) { Text(stringResource(R.string.action_cancel)) }
                             }
                             is StudioJobState.Completed -> {
                                 Text(stringResource(R.string.studio_processing_complete), style = MaterialTheme.typography.titleMedium, color = tokens.success)
@@ -212,218 +217,219 @@ fun MediaStudioScreen(
                 }
             }
 
-            when (activeTab) {
-                StudioToolTab.IMAGE -> {
-                    item {
-                        VaCard {
-                            VaPrimaryButton(
-                                text = stringResource(R.string.studio_pick_image),
-                                icon = Icons.Rounded.Image,
-                                onClick = {
-                                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                }
-                            )
-                            inspectedInfo?.let { info ->
-                                Spacer(Modifier.height(10.dp))
-                                Text("${info.fileName} • ${info.width}×${info.height} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (selectedUri != null) {
-                                Spacer(Modifier.height(10.dp))
-                                Text(stringResource(R.string.studio_output_format), style = MaterialTheme.typography.titleMedium)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf("JPEG", "PNG", "WEBP").forEach { fmt ->
-                                        FilterChip(selected = imageFormat == fmt, onClick = { imageFormat = fmt }, label = { Text(fmt) })
-                                    }
-                                }
-                                Text(stringResource(R.string.studio_compression_quality, imageQuality.toInt()), style = MaterialTheme.typography.labelLarge)
-                                Slider(value = imageQuality, valueRange = 10f..100f, onValueChange = { imageQuality = it })
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(
-                                        value = resizeWidth,
-                                        onValueChange = { resizeWidth = it.filter { c -> c.isDigit() } },
-                                        label = { Text(stringResource(R.string.studio_width_px)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                    OutlinedTextField(
-                                        value = resizeHeight,
-                                        onValueChange = { resizeHeight = it.filter { c -> c.isDigit() } },
-                                        label = { Text(stringResource(R.string.studio_height_px)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                }
-                                Spacer(Modifier.height(12.dp))
-                                Button(
+            item {
+                AnimatedContent(
+                    targetState = activeTab,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "studio_tab_content"
+                ) { tabState ->
+                    when (tabState) {
+                        StudioToolTab.IMAGE -> {
+                            VaCard {
+                                VaPrimaryButton(
+                                    text = stringResource(R.string.studio_pick_image),
+                                    icon = Icons.Rounded.Image,
                                     onClick = {
-                                        val uri = selectedUri ?: return@Button
-                                        scope.launch {
-                                            engine.processImage(
-                                                uri = uri,
-                                                targetFormat = imageFormat,
-                                                quality = imageQuality.toInt(),
-                                                targetWidth = resizeWidth.toIntOrNull(),
-                                                targetHeight = resizeHeight.toIntOrNull()
-                                            )
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(stringResource(R.string.studio_export_image))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                StudioToolTab.VIDEO -> {
-                    item {
-                        VaCard {
-                            VaPrimaryButton(
-                                text = stringResource(R.string.studio_pick_video),
-                                icon = Icons.Rounded.VideoFile,
-                                onClick = {
-                                    videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                                }
-                            )
-                            inspectedInfo?.let { info ->
-                                Spacer(Modifier.height(10.dp))
-                                Text("${info.fileName} • ${info.width}×${info.height} • ${FormatUtils.formatDuration(info.durationMs)} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (selectedUri != null) {
-                                Spacer(Modifier.height(10.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(
-                                        value = trimStartSec,
-                                        onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
-                                        label = { Text(stringResource(R.string.studio_trim_start_s)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                    OutlinedTextField(
-                                        value = trimEndSec,
-                                        onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
-                                        label = { Text(stringResource(R.string.studio_trim_end_s)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                }
-                                trimValidationError?.let { err ->
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
-                                }
-                                Spacer(Modifier.height(10.dp))
-                                val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = { engine.transformMedia(selectedUri!!, "VIDEO_COMPRESS") }, modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.studio_compress_mp4))
+                                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                     }
-                                    Button(onClick = { engine.transformMedia(selectedUri!!, "VIDEO_HEVC") }, modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.studio_convert_hevc))
-                                    }
-                                    Button(onClick = {
-                                        val s = trimStartSec.toLongOrNull()
-                                        val e = trimEndSec.toLongOrNull()
-                                        if (s == null || e == null || e <= s) {
-                                            trimValidationError = invalidRangeMsg
-                                        } else {
-                                            trimValidationError = null
-                                            engine.transformMedia(selectedUri!!, "VIDEO_TRIM", s * 1000L, e * 1000L)
-                                        }
-                                    }, modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.studio_trim_clip))
-                                    }
-                                    OutlinedButton(onClick = { engine.transformMedia(selectedUri!!, "EXTRACT_AUDIO") }, modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.studio_extract_audio))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                StudioToolTab.AUDIO -> {
-                    item {
-                        VaCard {
-                            VaPrimaryButton(
-                                text = stringResource(R.string.studio_pick_audio),
-                                icon = Icons.Rounded.AudioFile,
-                                onClick = { audioPicker.launch(arrayOf("audio/*")) }
-                            )
-                            inspectedInfo?.let { info ->
-                                Spacer(Modifier.height(10.dp))
-                                Text("${info.fileName} • ${FormatUtils.formatDuration(info.durationMs)} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (selectedUri != null) {
-                                Spacer(Modifier.height(10.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(
-                                        value = trimStartSec,
-                                        onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
-                                        label = { Text(stringResource(R.string.studio_cut_start_s)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                    OutlinedTextField(
-                                        value = trimEndSec,
-                                        onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
-                                        label = { Text(stringResource(R.string.studio_cut_end_s)) },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                }
-                                trimValidationError?.let { err ->
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
-                                }
-                                Spacer(Modifier.height(10.dp))
-                                val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
-                                Button(
-                                    onClick = {
-                                        val s = trimStartSec.toLongOrNull()
-                                        val e = trimEndSec.toLongOrNull()
-                                        if (s == null || e == null || e <= s) {
-                                            trimValidationError = invalidRangeMsg
-                                        } else {
-                                            trimValidationError = null
-                                            engine.transformMedia(selectedUri!!, "AUDIO_CONVERT", s * 1000L, e * 1000L)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(stringResource(R.string.studio_cut_convert_audio))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                StudioToolTab.GIF -> {
-                    item {
-                        VaCard {
-                            VaPrimaryButton(
-                                text = stringResource(R.string.studio_open_gif),
-                                icon = Icons.Rounded.GifBox,
-                                onClick = {
-                                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                }
-                            )
-                            selectedUri?.let { uri ->
-                                Spacer(Modifier.height(12.dp))
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = stringResource(R.string.studio_tab_gif),
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(14.dp))
                                 )
+                                inspectedInfo?.let { info ->
+                                    Spacer(Modifier.height(10.dp))
+                                    Text("${info.fileName} • ${info.width}×${info.height} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (selectedUri != null) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(stringResource(R.string.studio_output_format), style = MaterialTheme.typography.titleMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        listOf("JPEG", "PNG", "WEBP").forEach { fmt ->
+                                            FilterChip(selected = imageFormat == fmt, onClick = { imageFormat = fmt }, label = { Text(fmt) })
+                                        }
+                                    }
+                                    Text(stringResource(R.string.studio_compression_quality, imageQuality.toInt()), style = MaterialTheme.typography.labelLarge)
+                                    Slider(value = imageQuality, valueRange = 10f..100f, onValueChange = { imageQuality = it })
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = resizeWidth,
+                                            onValueChange = { resizeWidth = it.filter { c -> c.isDigit() } },
+                                            label = { Text(stringResource(R.string.studio_width_px)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            value = resizeHeight,
+                                            onValueChange = { resizeHeight = it.filter { c -> c.isDigit() } },
+                                            label = { Text(stringResource(R.string.studio_height_px)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    VaButton(
+                                        onClick = {
+                                            val uri = selectedUri ?: return@VaButton
+                                            scope.launch {
+                                                engine.processImage(
+                                                    uri = uri,
+                                                    targetFormat = imageFormat,
+                                                    quality = imageQuality.toInt(),
+                                                    targetWidth = resizeWidth.toIntOrNull(),
+                                                    targetHeight = resizeHeight.toIntOrNull()
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.studio_export_image))
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                StudioToolTab.QR -> {
-                    item {
-                        QrScannerCard(onSendUrlToDownloader = onSendUrlToDownloader)
+                        StudioToolTab.VIDEO -> {
+                            VaCard {
+                                VaPrimaryButton(
+                                    text = stringResource(R.string.studio_pick_video),
+                                    icon = Icons.Rounded.VideoFile,
+                                    onClick = {
+                                        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                                    }
+                                )
+                                inspectedInfo?.let { info ->
+                                    Spacer(Modifier.height(10.dp))
+                                    Text("${info.fileName} • ${info.width}×${info.height} • ${FormatUtils.formatDuration(info.durationMs)} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (selectedUri != null) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = trimStartSec,
+                                            onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
+                                            label = { Text(stringResource(R.string.studio_trim_start_s)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            value = trimEndSec,
+                                            onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
+                                            label = { Text(stringResource(R.string.studio_trim_end_s)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                    }
+                                    trimValidationError?.let { err ->
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Spacer(Modifier.height(10.dp))
+                                    val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VaButton(onClick = { engine.transformMedia(selectedUri!!, "VIDEO_COMPRESS") }, modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.studio_compress_mp4))
+                                        }
+                                        VaButton(onClick = { engine.transformMedia(selectedUri!!, "VIDEO_HEVC") }, modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.studio_convert_hevc))
+                                        }
+                                        VaButton(onClick = {
+                                            val s = trimStartSec.toLongOrNull()
+                                            val e = trimEndSec.toLongOrNull()
+                                            if (s == null || e == null || e <= s) {
+                                                trimValidationError = invalidRangeMsg
+                                            } else {
+                                                trimValidationError = null
+                                                engine.transformMedia(selectedUri!!, "VIDEO_TRIM", s * 1000L, e * 1000L)
+                                            }
+                                        }, modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.studio_trim_clip))
+                                        }
+                                        VaOutlinedButton(onClick = { engine.transformMedia(selectedUri!!, "EXTRACT_AUDIO") }, modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.studio_extract_audio))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        StudioToolTab.AUDIO -> {
+                            VaCard {
+                                VaPrimaryButton(
+                                    text = stringResource(R.string.studio_pick_audio),
+                                    icon = Icons.Rounded.AudioFile,
+                                    onClick = { audioPicker.launch(arrayOf("audio/*")) }
+                                )
+                                inspectedInfo?.let { info ->
+                                    Spacer(Modifier.height(10.dp))
+                                    Text("${info.fileName} • ${FormatUtils.formatDuration(info.durationMs)} • ${FormatUtils.formatBytes(info.sizeBytes)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (selectedUri != null) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = trimStartSec,
+                                            onValueChange = { trimStartSec = it.filter(Char::isDigit); trimValidationError = null },
+                                            label = { Text(stringResource(R.string.studio_cut_start_s)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            value = trimEndSec,
+                                            onValueChange = { trimEndSec = it.filter(Char::isDigit); trimValidationError = null },
+                                            label = { Text(stringResource(R.string.studio_cut_end_s)) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                    }
+                                    trimValidationError?.let { err ->
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(err, color = tokens.danger, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Spacer(Modifier.height(10.dp))
+                                    val invalidRangeMsg = stringResource(R.string.studio_invalid_trim_range)
+                                    VaButton(
+                                        onClick = {
+                                            val s = trimStartSec.toLongOrNull()
+                                            val e = trimEndSec.toLongOrNull()
+                                            if (s == null || e == null || e <= s) {
+                                                trimValidationError = invalidRangeMsg
+                                            } else {
+                                                trimValidationError = null
+                                                engine.transformMedia(selectedUri!!, "AUDIO_CONVERT", s * 1000L, e * 1000L)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.studio_cut_convert_audio))
+                                    }
+                                }
+                            }
+                        }
+
+                        StudioToolTab.GIF -> {
+                            VaCard {
+                                VaPrimaryButton(
+                                    text = stringResource(R.string.studio_open_gif),
+                                    icon = Icons.Rounded.GifBox,
+                                    onClick = {
+                                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    }
+                                )
+                                selectedUri?.let { uri ->
+                                    Spacer(Modifier.height(12.dp))
+                                    val gifRequest = remember(uri) {
+                                        ImageRequest.Builder(context).data(uri).size(720).crossfade(false).build()
+                                    }
+                                    AsyncImage(
+                                        model = gifRequest,
+                                        contentDescription = stringResource(R.string.studio_tab_gif),
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(14.dp))
+                                    )
+                                }
+                            }
+                        }
+
+                        StudioToolTab.QR -> {
+                            QrScannerCard(onSendUrlToDownloader = onSendUrlToDownloader)
+                        }
                     }
                 }
             }
@@ -463,10 +469,10 @@ private fun QrScannerCard(onSendUrlToDownloader: (String) -> Unit) {
                 Text(stringResource(R.string.studio_camera_perm_desc), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { camPermLauncher.launch(Manifest.permission.CAMERA) }) {
+                    VaButton(onClick = { camPermLauncher.launch(Manifest.permission.CAMERA) }) {
                         Text(stringResource(R.string.studio_grant_camera))
                     }
-                    OutlinedButton(onClick = { context.openAppDetailsSettings() }) {
+                    VaOutlinedButton(onClick = { context.openAppDetailsSettings() }) {
                         Text(stringResource(R.string.perm_open_settings))
                     }
                 }
@@ -535,7 +541,7 @@ private fun QrScannerCard(onSendUrlToDownloader: (String) -> Unit) {
                 Text(value, style = MaterialTheme.typography.bodyMedium)
                 if (value.startsWith("https://") || value.startsWith("http://")) {
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { onSendUrlToDownloader(value) }, modifier = Modifier.fillMaxWidth()) {
+                    VaButton(onClick = { onSendUrlToDownloader(value) }, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.browser_send_to_dl))
                     }
                 }

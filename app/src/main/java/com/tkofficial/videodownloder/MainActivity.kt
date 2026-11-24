@@ -11,6 +11,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -90,6 +93,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -141,6 +145,8 @@ import com.tkofficial.videodownloder.navigation.VideoPlaybackRoute
 import com.tkofficial.videodownloder.ui.browser.BrowserScreen
 import com.tkofficial.videodownloder.ui.browser.BrowserViewModel
 import com.tkofficial.videodownloder.ui.components.VaCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaPrimaryButton
 import com.tkofficial.videodownloder.ui.file_manager.BackupRestoreScreen
 import com.tkofficial.videodownloder.ui.file_manager.DownloadHistoryScreen
@@ -379,9 +385,7 @@ class MainActivity : AppCompatActivity() {
                                 )
                             }
 
-                            val playbackUi by playerViewModel.playbackUi.collectAsStateWithLifecycle()
-                            val showGlobalMiniBar = playbackUi.currentTitle.isNotBlank() &&
-                                !isInPipModeState.value &&
+                            val allowGlobalMiniBar = !isInPipModeState.value &&
                                 currentDest?.hasRoute(PlayerRoute::class) != true &&
                                 currentDest?.hasRoute(VideoPlaybackRoute::class) != true
 
@@ -397,20 +401,10 @@ class MainActivity : AppCompatActivity() {
                                 },
                                 bottomBar = {
                                     Column {
-                                        AnimatedVisibility(
-                                            visible = showGlobalMiniBar,
-                                            enter = fadeIn(tween(tokens.animDurationMs)),
-                                            exit = fadeOut(tween(tokens.animDurationMs))
-                                        ) {
-                                            GlobalMiniMusicBar(
-                                                title = playbackUi.currentTitle,
-                                                artist = playbackUi.currentArtist,
-                                                isPlaying = playbackUi.isPlaying,
-                                                positionMs = playbackUi.positionMs,
-                                                durationMs = playbackUi.durationMs,
-                                                onOpenPlayer = { navigateToTopTab(PlayerRoute) },
-                                                onTogglePlayPause = playerViewModel::togglePlayPause,
-                                                onSkipNext = playerViewModel::skipNext
+                                        if (allowGlobalMiniBar) {
+                                            GlobalMiniMusicBarHost(
+                                                playerViewModel = playerViewModel,
+                                                onOpenPlayer = { navigateToTopTab(PlayerRoute) }
                                             )
                                         }
                                         if (showPrimaryNav && !useRail) {
@@ -757,6 +751,31 @@ class MainActivity : AppCompatActivity() {
 }
 
 @Composable
+private fun GlobalMiniMusicBarHost(
+    playerViewModel: PlayerViewModel,
+    onOpenPlayer: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val playbackUi by playerViewModel.playbackUi.collectAsStateWithLifecycle()
+    AnimatedVisibility(
+        visible = playbackUi.currentTitle.isNotBlank(),
+        enter = fadeIn(tween(tokens.animDurationMs)),
+        exit = fadeOut(tween(tokens.animDurationMs))
+    ) {
+        GlobalMiniMusicBar(
+            title = playbackUi.currentTitle,
+            artist = playbackUi.currentArtist,
+            isPlaying = playbackUi.isPlaying,
+            positionMs = playbackUi.positionMs,
+            durationMs = playbackUi.durationMs,
+            onOpenPlayer = onOpenPlayer,
+            onTogglePlayPause = playerViewModel::togglePlayPause,
+            onSkipNext = playerViewModel::skipNext
+        )
+    }
+}
+
+@Composable
 private fun GlobalMiniMusicBar(
     title: String,
     artist: String,
@@ -799,14 +818,14 @@ private fun GlobalMiniMusicBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                IconButton(onClick = onTogglePlayPause) {
+                VaIconButton(onClick = onTogglePlayPause) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = stringResource(R.string.player_play_pause),
                         tint = tokens.primaryAccent
                     )
                 }
-                IconButton(onClick = onSkipNext) {
+                VaIconButton(onClick = onSkipNext) {
                     Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
                 }
             }
@@ -866,6 +885,11 @@ private fun VaBottomBar(
         ) {
             tabs.forEach { tab ->
                 val selected = isSelected(tab)
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected && !tokens.reduceMotion) 1.12f else 1f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                    label = "tab_icon_scale"
+                )
                 val icon = when (tokens.iconStyle) {
                     IconStyle.OUTLINED -> if (selected) tab.unselectedIcon else tab.unselectedIcon
                     IconStyle.ROUNDED, IconStyle.TWO_TONE -> if (selected) tab.selectedIcon else tab.unselectedIcon
@@ -876,13 +900,18 @@ private fun VaBottomBar(
                     modifier = Modifier.testTag(tab.testTag),
                     icon = {
                         Box(
-                            modifier = if (selected && tokens.iconStyle == IconStyle.TWO_TONE) {
+                            modifier = (if (selected && tokens.iconStyle == IconStyle.TWO_TONE) {
                                 Modifier
                                     .clip(CircleShape)
                                     .background(tokens.primaryAccent.copy(alpha = 0.16f))
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             } else {
                                 Modifier
+                            }).graphicsLayer {
+                                if (!tokens.reduceMotion) {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                }
                             }
                         ) {
                             Icon(
@@ -1031,7 +1060,7 @@ private fun AppLockOverlay(
                 )
                 if (biometricEnabled) {
                     Spacer(Modifier.height(10.dp))
-                    OutlinedButton(
+                    VaOutlinedButton(
                         onClick = onBiometricClick,
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {

@@ -655,4 +655,5 @@
     <string name="set_quick_theme">त्वरित थीम और डिज़ाइन</string>
     <string name="set_open_theme_studio">थीम स्टूडियो खोलें</string>
     <string name="gallery_device_item_note">डिवाइस मीडिया को एल्बम में कॉपी किया जा सकता है या वॉल्ट में एन्क्रिप्टेड कॉपी भेजी जा सकती है।</string>
+    <string name="api_http_blocked_hint">असुरक्षित HTTP एंडपॉइंट मिला। नेटवर्क सेटिंग्स में HTTP सक्षम करें या https:// उपयोग करें।</string>
 </resources>

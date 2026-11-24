@@ -655,4 +655,5 @@
     <string name="set_quick_theme">السمة السريعة والمظهر</string>
     <string name="set_open_theme_studio">فتح استوديو السمات</string>
     <string name="gallery_device_item_note">يمكن نسخ وسائط الجهاز إلى ألبوم أو نقل نسخة مشفرة إلى الخزنة.</string>
+    <string name="api_http_blocked_hint">تم اكتشاف رابط HTTP غير مشفر. فعّل خيار HTTP في إعدادات الشبكة أو استخدم https://.</string>
 </resources>

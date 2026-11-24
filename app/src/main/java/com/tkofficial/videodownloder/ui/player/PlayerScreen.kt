@@ -17,6 +17,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,22 +65,18 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -107,13 +104,19 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.models.DeviceMediaItem
+import com.tkofficial.videodownloder.ui.components.VaButton
 import com.tkofficial.videodownloder.ui.components.VaCard
 import com.tkofficial.videodownloder.ui.components.VaFolderCard
+import com.tkofficial.videodownloder.ui.components.VaIconButton
+import com.tkofficial.videodownloder.ui.components.VaOutlinedButton
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
+import com.tkofficial.videodownloder.ui.components.VaTextButton
+import com.tkofficial.videodownloder.ui.components.vaBouncePress
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.delay
@@ -258,8 +261,21 @@ fun PlayerScreen(
             )
         }
 
-        Box(modifier = Modifier.weight(1f)) {
-            if (mainSection == PlayerMainSection.VIDEO) {
+        AnimatedContent(
+            targetState = mainSection,
+            transitionSpec = {
+                if (tokens.reduceMotion) {
+                    fadeIn() togetherWith fadeOut()
+                } else if (targetState == PlayerMainSection.MUSIC) {
+                    (slideInHorizontally { it / 4 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 4 } + fadeOut())
+                } else {
+                    (slideInHorizontally { -it / 4 } + fadeIn()) togetherWith (slideOutHorizontally { it / 4 } + fadeOut())
+                }
+            },
+            label = "player_main_section",
+            modifier = Modifier.weight(1f)
+        ) { sec ->
+            if (sec == PlayerMainSection.VIDEO) {
                 VideoLibraryPane(
                     videos = videos,
                     selectedTab = videoTab,
@@ -323,8 +339,14 @@ fun PlayerScreen(
                         ) {
                             Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
                             playbackUi.currentAlbumArtUri?.let { art ->
+                                val artReq = remember(art) {
+                                    ImageRequest.Builder(context)
+                                        .data(Uri.parse(art))
+                                        .size(160)
+                                        .build()
+                                }
                                 AsyncImage(
-                                    model = Uri.parse(art),
+                                    model = artReq,
                                     contentDescription = playbackUi.currentTitle,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -341,17 +363,17 @@ fun PlayerScreen(
                                 maxLines = 1
                             )
                         }
-                        IconButton(onClick = viewModel::skipPrevious) {
+                        VaIconButton(onClick = viewModel::skipPrevious) {
                             Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev))
                         }
-                        IconButton(onClick = viewModel::togglePlayPause) {
+                        VaIconButton(onClick = viewModel::togglePlayPause) {
                             Icon(
                                 if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 contentDescription = stringResource(R.string.player_play_pause),
                                 tint = tokens.primaryAccent
                             )
                         }
-                        IconButton(onClick = viewModel::skipNext) {
+                        VaIconButton(onClick = viewModel::skipNext) {
                             Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
                         }
                     }
@@ -389,8 +411,14 @@ fun PlayerScreen(
                 ) {
                     Icon(Icons.Rounded.Album, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(80.dp))
                     playbackUi.currentAlbumArtUri?.let { art ->
+                        val sheetArtReq = remember(art) {
+                            ImageRequest.Builder(context)
+                                .data(Uri.parse(art))
+                                .size(512)
+                                .build()
+                        }
                         AsyncImage(
-                            model = Uri.parse(art),
+                            model = sheetArtReq,
                             contentDescription = playbackUi.currentTitle,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -425,22 +453,28 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = viewModel::toggleShuffle) {
+                    VaIconButton(onClick = viewModel::toggleShuffle) {
                         Icon(
                             Icons.Rounded.Shuffle,
                             contentDescription = stringResource(R.string.player_shuffle),
                             tint = if (playbackUi.shuffleEnabled) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = viewModel::skipPrevious) {
+                    VaIconButton(onClick = viewModel::skipPrevious) {
                         Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev), modifier = Modifier.size(34.dp))
                     }
+                    val playInteraction = remember { MutableInteractionSource() }
                     Box(
                         modifier = Modifier
                             .size(62.dp)
+                            .vaBouncePress(playInteraction, 0.9f)
                             .clip(CircleShape)
                             .background(tokens.heroGradient)
-                            .clickable(onClick = viewModel::togglePlayPause),
+                            .clickable(
+                                interactionSource = playInteraction,
+                                indication = androidx.compose.foundation.LocalIndication.current,
+                                onClick = viewModel::togglePlayPause
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -450,10 +484,10 @@ fun PlayerScreen(
                             modifier = Modifier.size(34.dp)
                         )
                     }
-                    IconButton(onClick = viewModel::skipNext) {
+                    VaIconButton(onClick = viewModel::skipNext) {
                         Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next), modifier = Modifier.size(34.dp))
                     }
-                    IconButton(onClick = viewModel::cycleRepeatMode) {
+                    VaIconButton(onClick = viewModel::cycleRepeatMode) {
                         val repIcon = if (playbackUi.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
                         val active = playbackUi.repeatMode != Player.REPEAT_MODE_OFF
                         Icon(repIcon, contentDescription = stringResource(R.string.player_repeat), tint = if (active) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -465,23 +499,23 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(onClick = { showEqDialog = true }) {
+                    VaOutlinedButton(onClick = { showEqDialog = true }) {
                         Icon(Icons.Rounded.Equalizer, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.player_equalizer))
                     }
-                    OutlinedButton(onClick = { showSleepDialog = true }) {
+                    VaOutlinedButton(onClick = { showSleepDialog = true }) {
                         Icon(Icons.Rounded.Bedtime, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         val stText = if (playbackUi.sleepTimerRemainingSec > 0) stringResource(R.string.mins_short, playbackUi.sleepTimerRemainingSec / 60) else stringResource(R.string.player_sleep_timer)
                         Text(stText)
                     }
-                    OutlinedButton(onClick = { showQueueDialog = true }) {
+                    VaOutlinedButton(onClick = { showQueueDialog = true }) {
                         Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.player_queue_count, musicQueue.size))
                     }
-                    OutlinedButton(onClick = { lrcPicker.launch(arrayOf("text/*", "application/octet-stream")) }) {
+                    VaOutlinedButton(onClick = { lrcPicker.launch(arrayOf("text/*", "application/octet-stream")) }) {
                         Icon(Icons.Rounded.Lyrics, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.player_lyrics_btn))
@@ -550,7 +584,7 @@ fun PlayerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { showEqDialog = false }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { showEqDialog = false }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -563,7 +597,7 @@ fun PlayerScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0, 10, 20, 30, 60).forEach { mins ->
-                        OutlinedButton(
+                        VaOutlinedButton(
                             onClick = {
                                 viewModel.startSleepTimer(mins)
                                 showSleepDialog = false
@@ -609,7 +643,7 @@ fun PlayerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { showQueueDialog = false }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { showQueueDialog = false }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -626,7 +660,7 @@ fun PlayerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { showLyricsDialog = false }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { showLyricsDialog = false }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -639,13 +673,13 @@ fun PlayerScreen(
             title = { Text(stringResource(R.string.player_new_playlist)) },
             text = { OutlinedTextField(value = plName, onValueChange = { plName = it }, placeholder = { Text(stringResource(R.string.player_playlist_name_hint)) }, singleLine = true) },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.createPlaylist(plName, if (mainSection == PlayerMainSection.VIDEO) "VIDEO" else "AUDIO")
                     showCreatePlaylistDialog = false
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showCreatePlaylistDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { showCreatePlaylistDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -663,7 +697,7 @@ fun PlayerScreen(
                         Text(stringResource(R.string.player_no_playlists_yet))
                     } else {
                         matchingPlaylists.forEach { pl ->
-                            TextButton(
+                            VaTextButton(
                                 onClick = {
                                     viewModel.addItemToPlaylist(pl.id, item)
                                     addToPlaylistItem = null
@@ -678,7 +712,7 @@ fun PlayerScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { addToPlaylistItem = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { addToPlaylistItem = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -699,13 +733,13 @@ fun PlayerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                VaButton(onClick = {
                     viewModel.saveSongMetadataOverride(item.uriString, title, artist, album)
                     editMetadataItem = null
                 }) { Text(stringResource(R.string.btn_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { editMetadataItem = null }) { Text(stringResource(R.string.btn_cancel)) }
+                VaTextButton(onClick = { editMetadataItem = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -757,7 +791,7 @@ fun PlayerScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                IconButton(onClick = { viewModel.removePlaylistItem(entry.id) }) {
+                                VaIconButton(onClick = { viewModel.removePlaylistItem(entry.id) }) {
                                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.vp_remove), tint = tokens.danger)
                                 }
                             }
@@ -766,7 +800,7 @@ fun PlayerScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = {
+                VaTextButton(onClick = {
                     viewModel.deletePlaylist(pl.id)
                     activePlaylistDetail = null
                 }) {
@@ -774,7 +808,7 @@ fun PlayerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { activePlaylistDetail = null }) { Text(stringResource(R.string.btn_close)) }
+                VaButton(onClick = { activePlaylistDetail = null }) { Text(stringResource(R.string.btn_close)) }
             }
         )
     }
@@ -841,9 +875,9 @@ private fun VideoLibraryPane(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.horizontalScroll(rememberScrollState())
                     ) {
-                        Button(onClick = onRequestVideoPerm) { Text(stringResource(R.string.player_scan_btn)) }
-                        OutlinedButton(onClick = onPickVideos) { Text(stringResource(R.string.player_pick_btn)) }
-                        OutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
+                        VaButton(onClick = onRequestVideoPerm) { Text(stringResource(R.string.player_scan_btn)) }
+                        VaOutlinedButton(onClick = onPickVideos) { Text(stringResource(R.string.player_pick_btn)) }
+                        VaOutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
                     }
                 }
             }
@@ -854,7 +888,7 @@ private fun VideoLibraryPane(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
+            VaOutlinedButton(
                 onClick = onPickVideos,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier.weight(1f)
@@ -863,7 +897,7 @@ private fun VideoLibraryPane(
                 Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.player_import_videos), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            OutlinedButton(
+            VaOutlinedButton(
                 onClick = onPickVideoFolder,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier.weight(1f)
@@ -872,7 +906,7 @@ private fun VideoLibraryPane(
                 Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.player_add_folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
+            VaIconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
             }
         }
@@ -899,7 +933,7 @@ private fun VideoLibraryPane(
         if (selectedTab == VideoSubTab.PLAYLISTS) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.player_video_playlists, playlists.size), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onCreatePlaylist) {
+                VaTextButton(onClick = onCreatePlaylist) {
                     Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.player_new))
@@ -940,7 +974,7 @@ private fun VideoLibraryPane(
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(folderGroups, key = { it.first }) { (folderTitle, itemsInFolder) ->
+                            items(folderGroups, key = { it.first }, contentType = { "video_folder" }) { (folderTitle, itemsInFolder) ->
                                 VaFolderCard(
                                     title = folderTitle,
                                     subtitle = stringResource(R.string.player_folder_items_count, itemsInFolder.size),
@@ -957,7 +991,7 @@ private fun VideoLibraryPane(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         ) {
-                            TextButton(onClick = { selectedFolderName = null }) {
+                            VaTextButton(onClick = { selectedFolderName = null }) {
                                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                                 Spacer(Modifier.width(4.dp))
                                 Text(stringResource(R.string.player_all_folders_back))
@@ -972,7 +1006,7 @@ private fun VideoLibraryPane(
                             )
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(filtered, key = { it.id }) { item ->
+                            items(filtered, key = { it.id }, contentType = { "video_item" }) { item ->
                                 VideoListItemCard(
                                     item = item,
                                     onPlay = { onPlayVideo(item) },
@@ -995,7 +1029,7 @@ private fun VideoLibraryPane(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(filtered, key = { it.id }) { item ->
+                items(filtered, key = { it.id }, contentType = { "video_item" }) { item ->
                     VideoListItemCard(
                         item = item,
                         onPlay = { onPlayVideo(item) },
@@ -1018,10 +1052,17 @@ private fun VideoListItemCard(
     modifier: Modifier = Modifier
 ) {
     val tokens = LocalVaTokens.current
+    val context = LocalContext.current
+    val thumbReq = remember(item.uriString, item.id) {
+        ImageRequest.Builder(context)
+            .data(Uri.parse(item.uriString))
+            .size(320, 200)
+            .build()
+    }
     VaCard(onClick = onPlay, contentPadding = PaddingValues(10.dp), modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
-                model = Uri.parse(item.uriString),
+                model = thumbReq,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
@@ -1038,14 +1079,14 @@ private fun VideoListItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(onClick = onToggleFavorite) {
+            VaIconButton(onClick = onToggleFavorite) {
                 Icon(
                     if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (item.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            IconButton(onClick = onAddToPlaylist) {
+            VaIconButton(onClick = onAddToPlaylist) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
@@ -1116,9 +1157,9 @@ private fun MusicLibraryPane(
                     Text(stringResource(R.string.player_scan_music_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        Button(onClick = onRequestAudioPerm) { Text(stringResource(R.string.player_scan_btn)) }
-                        OutlinedButton(onClick = onPickAudioFiles) { Text(stringResource(R.string.player_pick_btn)) }
-                        OutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
+                        VaButton(onClick = onRequestAudioPerm) { Text(stringResource(R.string.player_scan_btn)) }
+                        VaOutlinedButton(onClick = onPickAudioFiles) { Text(stringResource(R.string.player_pick_btn)) }
+                        VaOutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
                     }
                 }
             }
@@ -1129,12 +1170,12 @@ private fun MusicLibraryPane(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = onPickAudioFiles, modifier = Modifier.weight(1f)) {
+                VaOutlinedButton(onClick = onPickAudioFiles, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.AudioFile, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.player_import_audio), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
+                VaIconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
                 }
             }
@@ -1164,7 +1205,7 @@ private fun MusicLibraryPane(
         if (selectedTab == MusicSubTab.PLAYLISTS) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.player_audio_playlists), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onCreatePlaylist) {
+                VaTextButton(onClick = onCreatePlaylist) {
                     Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.player_new))
@@ -1216,7 +1257,7 @@ private fun MusicLibraryPane(
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(groupedEntries, key = { it.first }) { (groupTitle, tracks) ->
+                            items(groupedEntries, key = { it.first }, contentType = { "music_group" }) { (groupTitle, tracks) ->
                                 VaFolderCard(
                                     title = groupTitle,
                                     subtitle = stringResource(R.string.player_folder_items_count, tracks.size),
@@ -1233,7 +1274,7 @@ private fun MusicLibraryPane(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         ) {
-                            TextButton(onClick = { selectedGroupKey = null }) {
+                            VaTextButton(onClick = { selectedGroupKey = null }) {
                                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                                 Spacer(Modifier.width(4.dp))
                                 Text(stringResource(R.string.player_all_folders_back))
@@ -1248,7 +1289,7 @@ private fun MusicLibraryPane(
                             )
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(filtered, key = { _, item -> item.id }) { index, song ->
+                            itemsIndexed(filtered, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
                                 MusicTrackCard(
                                     song = song,
                                     isPlaying = song.uriString == currentPlayingUri,
@@ -1269,7 +1310,7 @@ private fun MusicLibraryPane(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(filtered, key = { _, item -> item.id }) { index, song ->
+                itemsIndexed(filtered, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
                     MusicTrackCard(
                         song = song,
                         isPlaying = song.uriString == currentPlayingUri,
@@ -1296,6 +1337,7 @@ private fun MusicTrackCard(
     modifier: Modifier = Modifier
 ) {
     val tokens = LocalVaTokens.current
+    val context = LocalContext.current
     VaCard(
         onClick = onClick,
         highlighted = isPlaying,
@@ -1312,8 +1354,14 @@ private fun MusicTrackCard(
             ) {
                 Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
                 song.albumArtUri?.let { art ->
+                    val artReq = remember(art) {
+                        ImageRequest.Builder(context)
+                            .data(Uri.parse(art))
+                            .size(192)
+                            .build()
+                    }
                     AsyncImage(
-                        model = Uri.parse(art),
+                        model = artReq,
                         contentDescription = song.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -1331,17 +1379,17 @@ private fun MusicTrackCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(onClick = onToggleFavorite) {
+            VaIconButton(onClick = onToggleFavorite) {
                 Icon(
                     if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (song.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            IconButton(onClick = onEditMetadata) {
+            VaIconButton(onClick = onEditMetadata) {
                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
             }
-            IconButton(onClick = onAddToPlaylist) {
+            VaIconButton(onClick = onAddToPlaylist) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
@@ -1353,8 +1401,9 @@ private fun MusicVisualizerCanvas(isPlaying: Boolean, modifier: Modifier = Modif
     val tokens = LocalVaTokens.current
     var phase by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
+    LaunchedEffect(isPlaying, tokens.reduceMotion) {
+        if (!isPlaying || tokens.reduceMotion) return@LaunchedEffect
+        while (true) {
             delay(50L)
             phase += 0.25f
         }

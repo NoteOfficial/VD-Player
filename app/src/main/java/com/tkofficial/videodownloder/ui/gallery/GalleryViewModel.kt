@@ -21,7 +21,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -68,7 +71,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _hasImagesPermission = MutableStateFlow(false)
     private val _hasVideoPermission = MutableStateFlow(false)
     private val _refreshTrigger = MutableStateFlow(0L)
-    private val _deviceMedia = MutableStateFlow<List<DownloadedMediaEntity>>(emptyList())
+    private val _rawDeviceMedia = MutableStateFlow<List<DownloadedMediaEntity>>(emptyList())
 
     val albums: StateFlow<List<AlbumEntity>> = galleryDao.observeAlbums()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -82,45 +85,63 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val favorites = playerDao.observeAllFavorites()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val favoriteKeySet = favorites
+        .map { favs -> favs.map { it.itemKey }.toSet() }
+        .distinctUntilChanged()
+
+    private val _deviceMedia: StateFlow<List<DownloadedMediaEntity>> = combine(
+        _rawDeviceMedia,
+        favoriteKeySet
+    ) { raw, favKeys ->
+        raw.map { item ->
+            val fav = favKeys.contains(item.contentUri)
+            if (item.isFavorite == fav) item else item.copy(isFavorite = fav)
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val allDownloadedMedia: StateFlow<List<DownloadedMediaEntity>> = combine(
         downloadedActive,
         _deviceMedia
     ) { downloaded, device ->
         downloaded + device
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
+            val excludeKeysFlow = combine(downloadedActive, trashedMedia) { active, trashed ->
+                val all = active + trashed
+                val paths = all.mapNotNull { it.filePath.takeIf(String::isNotBlank) }.toSet()
+                val uris = all.mapNotNull { it.contentUri.takeIf(String::isNotBlank) }.toSet()
+                paths to uris
+            }.distinctUntilChanged()
+
             combine(
                 _hasImagesPermission,
                 _hasVideoPermission,
                 _refreshTrigger,
-                downloadedActive,
-                trashedMedia,
-                favorites
-            ) { arr ->
-                val imgPerm = arr[0] as Boolean
-                val vidPerm = arr[1] as Boolean
-                @Suppress("UNCHECKED_CAST")
-                val active = arr[3] as List<DownloadedMediaEntity>
-                @Suppress("UNCHECKED_CAST")
-                val trashed = arr[4] as List<DownloadedMediaEntity>
-                @Suppress("UNCHECKED_CAST")
-                val favs = arr[5] as List<FavoriteEntity>
-
-                val excludePaths = (active + trashed).mapNotNull { it.filePath.takeIf(String::isNotBlank) }.toSet()
-                val excludeUris = (active + trashed).mapNotNull { it.contentUri.takeIf(String::isNotBlank) }.toSet()
-                val favKeys = favs.map { it.itemKey }.toSet()
-                mediaRepo.loadDeviceGalleryMedia(
-                    hasImagesPermission = imgPerm,
-                    hasVideoPermission = vidPerm,
-                    excludeFilePaths = excludePaths,
-                    excludeContentUris = excludeUris,
-                    favoriteKeys = favKeys
-                )
-            }.collect { scanned ->
-                _deviceMedia.value = scanned
+                excludeKeysFlow
+            ) { imgPerm, vidPerm, _, excludes ->
+                Triple(imgPerm, vidPerm, excludes)
             }
+                .map { (imgPerm, vidPerm, excludes) ->
+                    mediaRepo.loadDeviceGalleryMedia(
+                        hasImagesPermission = imgPerm,
+                        hasVideoPermission = vidPerm,
+                        excludeFilePaths = excludes.first,
+                        excludeContentUris = excludes.second,
+                        favoriteKeys = emptySet()
+                    )
+                }
+                .flowOn(Dispatchers.IO)
+                .collect { scanned ->
+                    _rawDeviceMedia.value = scanned
+                }
         }
     }
 
@@ -166,7 +187,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             GallerySortOrder.NAME_ASC -> base.sortedBy { it.title.lowercase() }
             GallerySortOrder.SIZE_DESC -> base.sortedByDescending { it.sizeBytes }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private suspend fun locString(@StringRes resId: Int, vararg args: Any): String {
         val lang = prefsRepo.settingsFlow.first().language
