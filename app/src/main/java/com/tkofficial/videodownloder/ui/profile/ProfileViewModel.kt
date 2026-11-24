@@ -27,6 +27,7 @@ import com.tkofficial.videodownloder.network.ApiConfigStatus
 import com.tkofficial.videodownloder.network.ApiTestResult
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -97,6 +98,8 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     private val _showHiddenFiles = MutableStateFlow(false)
     val showHiddenFiles: StateFlow<Boolean> = _showHiddenFiles.asStateFlow()
+
+    private var loadDirJob: Job? = null
 
     private val _storageSummary = MutableStateFlow<StorageSummary?>(null)
     val storageSummary: StateFlow<StorageSummary?> = _storageSummary.asStateFlow()
@@ -490,14 +493,17 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
 
     // File Manager
     fun loadDirectory(dir: File = _currentDir.value) {
-        _currentDir.value = dir
-        viewModelScope.launch {
-            _fileEntries.value = fileRepo.listDirectory(dir, _showHiddenFiles.value)
+        loadDirJob?.cancel()
+        loadDirJob = viewModelScope.launch {
+            val loaded = fileRepo.listDirectory(dir, _showHiddenFiles.value)
+            _currentDir.value = dir
+            _fileEntries.value = loaded
         }
     }
 
     fun loadCategoryFiles(category: MediaCategory?) {
-        viewModelScope.launch {
+        loadDirJob?.cancel()
+        loadDirJob = viewModelScope.launch {
             _fileEntries.value = fileRepo.listByCategory(category, _showHiddenFiles.value)
         }
     }

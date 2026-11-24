@@ -89,13 +89,30 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         .map { favs -> favs.map { it.itemKey }.toSet() }
         .distinctUntilChanged()
 
+    private val excludeKeysFlow = combine(downloadedActive, trashedMedia) { active, trashed ->
+        val all = active + trashed
+        val paths = all.mapNotNull { it.filePath.takeIf(String::isNotBlank) }.toSet()
+        val uris = all.mapNotNull { it.contentUri.takeIf(String::isNotBlank) }.toSet()
+        paths to uris
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+
     private val _deviceMedia: StateFlow<List<DownloadedMediaEntity>> = combine(
         _rawDeviceMedia,
+        excludeKeysFlow,
         favoriteKeySet
-    ) { raw, favKeys ->
-        raw.map { item ->
-            val fav = favKeys.contains(item.contentUri)
-            if (item.isFavorite == fav) item else item.copy(isFavorite = fav)
+    ) { raw, excludes, favKeys ->
+        val (excludePaths, excludeUris) = excludes
+        raw.mapNotNull { item ->
+            if (excludeUris.contains(item.contentUri) ||
+                (item.filePath.isNotBlank() && excludePaths.contains(item.filePath))
+            ) {
+                null
+            } else {
+                val fav = favKeys.contains(item.contentUri)
+                if (item.isFavorite == fav) item else item.copy(isFavorite = fav)
+            }
         }
     }
         .flowOn(Dispatchers.Default)
@@ -114,27 +131,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            val excludeKeysFlow = combine(downloadedActive, trashedMedia) { active, trashed ->
-                val all = active + trashed
-                val paths = all.mapNotNull { it.filePath.takeIf(String::isNotBlank) }.toSet()
-                val uris = all.mapNotNull { it.contentUri.takeIf(String::isNotBlank) }.toSet()
-                paths to uris
-            }.distinctUntilChanged()
-
             combine(
                 _hasImagesPermission,
                 _hasVideoPermission,
-                _refreshTrigger,
-                excludeKeysFlow
-            ) { imgPerm, vidPerm, _, excludes ->
-                Triple(imgPerm, vidPerm, excludes)
+                _refreshTrigger
+            ) { imgPerm, vidPerm, trigger ->
+                Triple(imgPerm, vidPerm, trigger)
             }
-                .map { (imgPerm, vidPerm, excludes) ->
+                .distinctUntilChanged()
+                .map { (imgPerm, vidPerm, _) ->
                     mediaRepo.loadDeviceGalleryMedia(
                         hasImagesPermission = imgPerm,
                         hasVideoPermission = vidPerm,
-                        excludeFilePaths = excludes.first,
-                        excludeContentUris = excludes.second,
+                        excludeFilePaths = emptySet(),
+                        excludeContentUris = emptySet(),
                         favoriteKeys = emptySet()
                     )
                 }

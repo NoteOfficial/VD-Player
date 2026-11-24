@@ -11,6 +11,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -71,19 +72,17 @@ data class VaTokens(
     val navStyle: NavStyle,
     val iconStyle: IconStyle
 ) {
-    val heroGradient: Brush
-        get() = if (enableGradients) {
-            Brush.linearGradient(listOf(primaryAccent, secondaryAccent, tertiaryAccent))
-        } else {
-            Brush.linearGradient(listOf(primaryAccent, primaryAccent))
-        }
+    val heroGradient: Brush = if (enableGradients) {
+        Brush.linearGradient(listOf(primaryAccent, secondaryAccent, tertiaryAccent))
+    } else {
+        Brush.linearGradient(listOf(primaryAccent, primaryAccent))
+    }
 
-    val surfaceGradient: Brush
-        get() = if (enableGradients) {
-            Brush.verticalGradient(listOf(cardSurface, elevatedSurface))
-        } else {
-            Brush.verticalGradient(listOf(cardSurface, cardSurface))
-        }
+    val surfaceGradient: Brush = if (enableGradients) {
+        Brush.verticalGradient(listOf(cardSurface, elevatedSurface))
+    } else {
+        Brush.verticalGradient(listOf(cardSurface, cardSurface))
+    }
 }
 
 val LocalVaTokens = staticCompositionLocalOf {
@@ -255,122 +254,136 @@ fun DownloaderVaTheme(
     val navStyle = runCatching { NavStyle.valueOf(config.navStyle) }.getOrDefault(NavStyle.PILL)
     val iconStyle = runCatching { IconStyle.valueOf(config.iconStyle) }.getOrDefault(IconStyle.ROUNDED)
 
-    val tokens = VaTokens(
-        isDark = base.isDark,
-        primaryAccent = accent,
-        secondaryAccent = base.secondary,
-        tertiaryAccent = base.tertiary,
-        background = bg,
-        cardSurface = card,
-        elevatedSurface = base.elevated,
-        iconTint = iconColor,
-        borderSubtle = accent.copy(
-            alpha = if (highContrast) 0.65f else if (base.isDark) 0.32f else 0.18f
-        ),
-        glowColor = base.tertiary,
-        success = Color(0xFF22C55E),
-        warning = Color(0xFFF59E0B),
-        danger = Color(0xFFEF4444),
-        cardRadius = config.borderRadiusDp.coerceIn(8f, 28f).dp,
-        smallRadius = (config.borderRadiusDp * 0.68f).coerceIn(6f, 20f).dp,
-        glowIntensity = effectiveGlow,
-        shadowIntensity = effectiveShadow,
-        enableGradients = effectiveGradients,
-        animDurationMs = if (reduceMotion) 0 else baseAnimMs,
-        reduceMotion = reduceMotion,
-        navStyle = navStyle,
-        iconStyle = iconStyle
-    )
-
-    val colorScheme: ColorScheme = if (base.isDark) {
-        darkColorScheme(
-            primary = accent,
-            onPrimary = Color.White,
-            secondary = base.secondary,
-            onSecondary = Color.White,
-            tertiary = base.tertiary,
+    val tokens = remember(
+        config,
+        batterySaver,
+        lowEndMode,
+        highContrast,
+        sysDark
+    ) {
+        VaTokens(
+            isDark = base.isDark,
+            primaryAccent = accent,
+            secondaryAccent = base.secondary,
+            tertiaryAccent = base.tertiary,
             background = bg,
-            onBackground = base.onBg,
-            surface = card,
-            onSurface = base.onCard,
-            surfaceVariant = base.elevated,
-            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.98f else 0.86f),
-            outline = accent.copy(alpha = if (highContrast) 0.78f else 0.44f),
-            error = tokens.danger
-        )
-    } else {
-        lightColorScheme(
-            primary = accent,
-            onPrimary = Color.White,
-            secondary = base.secondary,
-            onSecondary = Color.White,
-            tertiary = base.tertiary,
-            background = bg,
-            onBackground = base.onBg,
-            surface = card,
-            onSurface = base.onCard,
-            surfaceVariant = base.elevated,
-            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.95f else 0.72f),
-            outline = accent.copy(alpha = if (highContrast) 0.65f else 0.28f),
-            error = tokens.danger
+            cardSurface = card,
+            elevatedSurface = base.elevated,
+            iconTint = iconColor,
+            borderSubtle = accent.copy(
+                alpha = if (highContrast) 0.65f else if (base.isDark) 0.32f else 0.18f
+            ),
+            glowColor = base.tertiary,
+            success = Color(0xFF22C55E),
+            warning = Color(0xFFF59E0B),
+            danger = Color(0xFFEF4444),
+            cardRadius = config.borderRadiusDp.coerceIn(8f, 28f).dp,
+            smallRadius = (config.borderRadiusDp * 0.68f).coerceIn(6f, 20f).dp,
+            glowIntensity = effectiveGlow,
+            shadowIntensity = effectiveShadow,
+            enableGradients = effectiveGradients,
+            animDurationMs = if (reduceMotion) 0 else baseAnimMs,
+            reduceMotion = reduceMotion,
+            navStyle = navStyle,
+            iconStyle = iconStyle
         )
     }
 
-    val fs = config.fontScale.coerceIn(0.85f, 1.35f)
-    val typography = Typography(
-        headlineLarge = TextStyle(
-            fontFamily = DisplayFontFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = (26f * fs).sp,
-            lineHeight = (32f * fs).sp
-        ),
-        headlineMedium = TextStyle(
-            fontFamily = DisplayFontFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = (21f * fs).sp,
-            lineHeight = (27f * fs).sp
-        ),
-        titleLarge = TextStyle(
-            fontFamily = DisplayFontFamily,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = (18f * fs).sp,
-            lineHeight = (24f * fs).sp
-        ),
-        titleMedium = TextStyle(
-            fontFamily = BodyFontFamily,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = (15.5f * fs).sp,
-            lineHeight = (21f * fs).sp
-        ),
-        bodyLarge = TextStyle(
-            fontFamily = BodyFontFamily,
-            fontWeight = FontWeight.Normal,
-            fontSize = (15f * fs).sp,
-            lineHeight = (21f * fs).sp
-        ),
-        bodyMedium = TextStyle(
-            fontFamily = BodyFontFamily,
-            fontWeight = FontWeight.Normal,
-            fontSize = (13.5f * fs).sp,
-            lineHeight = (19f * fs).sp
-        ),
-        labelLarge = TextStyle(
-            fontFamily = BodyFontFamily,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = (13.5f * fs).sp
-        ),
-        labelSmall = TextStyle(
-            fontFamily = MonoFontFamily,
-            fontWeight = FontWeight.Medium,
-            fontSize = (11f * fs).sp
-        )
-    )
+    val colorScheme: ColorScheme = remember(tokens, base, accent, bg, card, highContrast) {
+        if (base.isDark) {
+            darkColorScheme(
+                primary = accent,
+                onPrimary = Color.White,
+                secondary = base.secondary,
+                onSecondary = Color.White,
+                tertiary = base.tertiary,
+                background = bg,
+                onBackground = base.onBg,
+                surface = card,
+                onSurface = base.onCard,
+                surfaceVariant = base.elevated,
+                onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.98f else 0.86f),
+                outline = accent.copy(alpha = if (highContrast) 0.78f else 0.44f),
+                error = tokens.danger
+            )
+        } else {
+            lightColorScheme(
+                primary = accent,
+                onPrimary = Color.White,
+                secondary = base.secondary,
+                onSecondary = Color.White,
+                tertiary = base.tertiary,
+                background = bg,
+                onBackground = base.onBg,
+                surface = card,
+                onSurface = base.onCard,
+                surfaceVariant = base.elevated,
+                onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.95f else 0.72f),
+                outline = accent.copy(alpha = if (highContrast) 0.65f else 0.28f),
+                error = tokens.danger
+            )
+        }
+    }
 
-    val shapes = Shapes(
-        small = RoundedCornerShape(tokens.smallRadius),
-        medium = RoundedCornerShape(tokens.cardRadius),
-        large = RoundedCornerShape((tokens.cardRadius + 4.dp))
-    )
+    val fs = config.fontScale.coerceIn(0.85f, 1.35f)
+    val typography = remember(fs) {
+        Typography(
+            headlineLarge = TextStyle(
+                fontFamily = DisplayFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = (26f * fs).sp,
+                lineHeight = (32f * fs).sp
+            ),
+            headlineMedium = TextStyle(
+                fontFamily = DisplayFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = (21f * fs).sp,
+                lineHeight = (27f * fs).sp
+            ),
+            titleLarge = TextStyle(
+                fontFamily = DisplayFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (18f * fs).sp,
+                lineHeight = (24f * fs).sp
+            ),
+            titleMedium = TextStyle(
+                fontFamily = BodyFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (15.5f * fs).sp,
+                lineHeight = (21f * fs).sp
+            ),
+            bodyLarge = TextStyle(
+                fontFamily = BodyFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = (15f * fs).sp,
+                lineHeight = (21f * fs).sp
+            ),
+            bodyMedium = TextStyle(
+                fontFamily = BodyFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = (13.5f * fs).sp,
+                lineHeight = (19f * fs).sp
+            ),
+            labelLarge = TextStyle(
+                fontFamily = BodyFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (13.5f * fs).sp
+            ),
+            labelSmall = TextStyle(
+                fontFamily = MonoFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = (11f * fs).sp
+            )
+        )
+    }
+
+    val shapes = remember(tokens.smallRadius, tokens.cardRadius) {
+        Shapes(
+            small = RoundedCornerShape(tokens.smallRadius),
+            medium = RoundedCornerShape(tokens.cardRadius),
+            large = RoundedCornerShape((tokens.cardRadius + 4.dp))
+        )
+    }
 
     CompositionLocalProvider(LocalVaTokens provides tokens) {
         MaterialTheme(

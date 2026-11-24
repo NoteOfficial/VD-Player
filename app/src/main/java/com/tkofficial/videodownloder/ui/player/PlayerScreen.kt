@@ -106,6 +106,7 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.tkofficial.videodownloder.core.FastMediaThumb
 import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.models.DeviceMediaItem
@@ -135,8 +136,13 @@ fun PlayerScreen(
     val mainSection by viewModel.mainSection.collectAsStateWithLifecycle()
     val videoTab by viewModel.videoTab.collectAsStateWithLifecycle()
     val musicTab by viewModel.musicTab.collectAsStateWithLifecycle()
-    val videos by viewModel.videos.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val videoFolderMap by viewModel.videoFolderMap.collectAsStateWithLifecycle()
+    val videoFolderEntries by viewModel.videoFolderEntries.collectAsStateWithLifecycle()
+    val filteredVideos by viewModel.filteredVideos.collectAsStateWithLifecycle()
+    val musicGroupMap by viewModel.musicGroupMap.collectAsStateWithLifecycle()
+    val musicGroupEntries by viewModel.musicGroupEntries.collectAsStateWithLifecycle()
+    val filteredSongs by viewModel.filteredSongs.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val playbackUi by viewModel.playbackUi.collectAsStateWithLifecycle()
     val musicQueue by viewModel.musicQueue.collectAsStateWithLifecycle()
@@ -277,7 +283,9 @@ fun PlayerScreen(
         ) { sec ->
             if (sec == PlayerMainSection.VIDEO) {
                 VideoLibraryPane(
-                    videos = videos,
+                    filteredVideos = filteredVideos,
+                    folderEntries = videoFolderEntries,
+                    folderMap = videoFolderMap,
                     selectedTab = videoTab,
                     hasVideoPerm = hasVideoPerm,
                     playlists = playlists.filter { it.mediaCategory == "VIDEO" },
@@ -297,7 +305,10 @@ fun PlayerScreen(
                 )
             } else {
                 MusicLibraryPane(
-                    songs = songs,
+                    allSongs = songs,
+                    filteredSongs = filteredSongs,
+                    groupedEntries = musicGroupEntries,
+                    groupMap = musicGroupMap,
                     selectedTab = musicTab,
                     hasAudioPerm = hasAudioPerm,
                     playlists = playlists.filter { it.mediaCategory == "AUDIO" },
@@ -816,7 +827,9 @@ fun PlayerScreen(
 
 @Composable
 private fun VideoLibraryPane(
-    videos: List<DeviceMediaItem>,
+    filteredVideos: List<DeviceMediaItem>,
+    folderEntries: List<Pair<String, List<DeviceMediaItem>>>,
+    folderMap: Map<String, List<DeviceMediaItem>>,
     selectedTab: VideoSubTab,
     hasVideoPerm: Boolean,
     playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
@@ -837,27 +850,6 @@ private fun VideoLibraryPane(
 
     BackHandler(enabled = selectedTab == VideoSubTab.FOLDERS && selectedFolderName != null) {
         selectedFolderName = null
-    }
-
-    val folderGroups = remember(videos) {
-        videos.groupBy { it.folderName.ifBlank { "Local Folder" } }
-            .entries
-            .sortedBy { it.key.lowercase() }
-            .map { it.key to it.value }
-    }
-
-    val filtered = remember(videos, selectedTab, selectedFolderName) {
-        when (selectedTab) {
-            VideoSubTab.ALL -> videos
-            VideoSubTab.FOLDERS -> selectedFolderName?.let { folder ->
-                videos.filter { it.folderName.ifBlank { "Local Folder" } == folder }
-            } ?: emptyList()
-            VideoSubTab.RECENT -> videos.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
-            VideoSubTab.FAVORITES -> videos.filter { it.isFavorite }
-            VideoSubTab.DOWNLOADED -> videos.filter { it.isDownloadedByApp }
-            VideoSubTab.CONTINUE -> videos.filter { it.lastPositionMs > 1000L }
-            VideoSubTab.PLAYLISTS -> videos
-        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -964,7 +956,7 @@ private fun VideoLibraryPane(
                 label = "video_folder_transition"
             ) { folder ->
                 if (folder == null) {
-                    if (folderGroups.isEmpty()) {
+                    if (folderEntries.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
                                 stringResource(R.string.player_no_videos_found),
@@ -974,18 +966,19 @@ private fun VideoLibraryPane(
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(folderGroups, key = { it.first }, contentType = { "video_folder" }) { (folderTitle, itemsInFolder) ->
+                            items(folderEntries, key = { it.first }, contentType = { "video_folder" }) { (folderTitle, itemsInFolder) ->
                                 VaFolderCard(
                                     title = folderTitle,
                                     subtitle = stringResource(R.string.player_folder_items_count, itemsInFolder.size),
                                     icon = Icons.Rounded.Folder,
                                     onClick = { selectedFolderName = folderTitle },
-                                    modifier = Modifier.animateItem()
+                                    lightweight = true
                                 )
                             }
                         }
                     }
                 } else {
+                    val folderVideos = remember(folder, folderMap) { folderMap[folder].orEmpty() }
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1006,20 +999,19 @@ private fun VideoLibraryPane(
                             )
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(filtered, key = { it.id }, contentType = { "video_item" }) { item ->
+                            items(folderVideos, key = { it.id }, contentType = { "video_item" }) { item ->
                                 VideoListItemCard(
                                     item = item,
                                     onPlay = { onPlayVideo(item) },
                                     onToggleFavorite = { onToggleFavorite(item) },
-                                    onAddToPlaylist = { onAddToPlaylist(item) },
-                                    modifier = Modifier.animateItem()
+                                    onAddToPlaylist = { onAddToPlaylist(item) }
                                 )
                             }
                         }
                     }
                 }
             }
-        } else if (filtered.isEmpty()) {
+        } else if (filteredVideos.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(R.string.player_no_videos_found),
@@ -1029,13 +1021,12 @@ private fun VideoLibraryPane(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(filtered, key = { it.id }, contentType = { "video_item" }) { item ->
+                items(filteredVideos, key = { it.id }, contentType = { "video_item" }) { item ->
                     VideoListItemCard(
                         item = item,
                         onPlay = { onPlayVideo(item) },
                         onToggleFavorite = { onToggleFavorite(item) },
-                        onAddToPlaylist = { onAddToPlaylist(item) },
-                        modifier = Modifier.animateItem()
+                        onAddToPlaylist = { onAddToPlaylist(item) }
                     )
                 }
             }
@@ -1053,19 +1044,21 @@ private fun VideoListItemCard(
 ) {
     val tokens = LocalVaTokens.current
     val context = LocalContext.current
+    val thumbShape = remember { RoundedCornerShape(10.dp) }
     val thumbReq = remember(item.uriString, item.id) {
         ImageRequest.Builder(context)
-            .data(Uri.parse(item.uriString))
-            .size(320, 200)
+            .data(FastMediaThumb(uriString = item.uriString, isVideo = true))
+            .size(264, 168)
+            .crossfade(false)
             .build()
     }
-    VaCard(onClick = onPlay, contentPadding = PaddingValues(10.dp), modifier = modifier) {
+    VaCard(onClick = onPlay, lightweight = true, contentPadding = PaddingValues(10.dp), modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
                 model = thumbReq,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(tokens.elevatedSurface)
+                modifier = Modifier.size(width = 88.dp, height = 56.dp).clip(thumbShape).background(tokens.elevatedSurface)
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1095,7 +1088,10 @@ private fun VideoListItemCard(
 
 @Composable
 private fun MusicLibraryPane(
-    songs: List<DeviceMediaItem>,
+    allSongs: List<DeviceMediaItem>,
+    filteredSongs: List<DeviceMediaItem>,
+    groupedEntries: List<Pair<String, List<DeviceMediaItem>>>,
+    groupMap: Map<String, List<DeviceMediaItem>>,
     selectedTab: MusicSubTab,
     hasAudioPerm: Boolean,
     playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
@@ -1118,35 +1114,6 @@ private fun MusicLibraryPane(
 
     BackHandler(enabled = isGroupedTab && selectedGroupKey != null) {
         selectedGroupKey = null
-    }
-
-    val groupedEntries = remember(songs, selectedTab) {
-        when (selectedTab) {
-            MusicSubTab.ALBUMS -> songs.groupBy { it.album.ifBlank { "Unknown Album" } }
-            MusicSubTab.ARTISTS -> songs.groupBy { it.artist.ifBlank { "Unknown Artist" } }
-            MusicSubTab.FOLDERS -> songs.groupBy { it.folderName.ifBlank { "Music" } }
-            else -> emptyMap()
-        }.entries.sortedBy { it.key.lowercase() }.map { it.key to it.value }
-    }
-
-    val filtered = remember(songs, selectedTab, selectedGroupKey) {
-        when (selectedTab) {
-            MusicSubTab.ALL_SONGS -> songs
-            MusicSubTab.ALBUMS -> selectedGroupKey?.let { grp ->
-                songs.filter { it.album.ifBlank { "Unknown Album" } == grp }
-            } ?: emptyList()
-            MusicSubTab.ARTISTS -> selectedGroupKey?.let { grp ->
-                songs.filter { it.artist.ifBlank { "Unknown Artist" } == grp }
-            } ?: emptyList()
-            MusicSubTab.FOLDERS -> selectedGroupKey?.let { grp ->
-                songs.filter { it.folderName.ifBlank { "Music" } == grp }
-            } ?: emptyList()
-            MusicSubTab.FAVORITES -> songs.filter { it.isFavorite }
-            MusicSubTab.RECENT -> songs.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
-            MusicSubTab.MOST_PLAYED -> songs.filter { it.playCount > 0 }.sortedByDescending { it.playCount }
-            MusicSubTab.RECENTLY_ADDED -> songs.sortedByDescending { it.dateAddedSec }
-            MusicSubTab.PLAYLISTS -> songs
-        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -1213,17 +1180,17 @@ private fun MusicLibraryPane(
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
-                    VaCard(onClick = { onPlaySongList(songs.sortedByDescending { it.playCount }.take(25), 0) }) {
-                        Text(stringResource(R.string.player_smart_most_played, songs.count { it.playCount > 0 }), style = MaterialTheme.typography.titleMedium)
+                    VaCard(onClick = { onPlaySongList(allSongs.sortedByDescending { it.playCount }.take(25), 0) }) {
+                        Text(stringResource(R.string.player_smart_most_played, allSongs.count { it.playCount > 0 }), style = MaterialTheme.typography.titleMedium)
                     }
                 }
                 item {
-                    VaCard(onClick = { onPlaySongList(songs.filter { it.isFavorite }, 0) }) {
-                        Text(stringResource(R.string.player_smart_favorites, songs.count { it.isFavorite }), style = MaterialTheme.typography.titleMedium)
+                    VaCard(onClick = { onPlaySongList(allSongs.filter { it.isFavorite }, 0) }) {
+                        Text(stringResource(R.string.player_smart_favorites, allSongs.count { it.isFavorite }), style = MaterialTheme.typography.titleMedium)
                     }
                 }
                 items(playlists, key = { it.id }) { pl ->
-                    VaCard(onClick = { onOpenPlaylist(pl) }, modifier = Modifier.animateItem()) {
+                    VaCard(onClick = { onOpenPlaylist(pl) }, lightweight = true) {
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(pl.name, style = MaterialTheme.typography.titleMedium)
                             Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = tokens.primaryAccent)
@@ -1263,12 +1230,13 @@ private fun MusicLibraryPane(
                                     subtitle = stringResource(R.string.player_folder_items_count, tracks.size),
                                     icon = groupIcon,
                                     onClick = { selectedGroupKey = groupTitle },
-                                    modifier = Modifier.animateItem()
+                                    lightweight = true
                                 )
                             }
                         }
                     }
                 } else {
+                    val groupTracks = remember(group, groupMap) { groupMap[group].orEmpty() }
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1289,36 +1257,34 @@ private fun MusicLibraryPane(
                             )
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(filtered, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
+                            itemsIndexed(groupTracks, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
                                 MusicTrackCard(
                                     song = song,
                                     isPlaying = song.uriString == currentPlayingUri,
-                                    onClick = { onPlaySongList(filtered, index) },
+                                    onClick = { onPlaySongList(groupTracks, index) },
                                     onToggleFavorite = { onToggleFavorite(song) },
                                     onEditMetadata = { onEditMetadata(song) },
-                                    onAddToPlaylist = { onAddToPlaylist(song) },
-                                    modifier = Modifier.animateItem()
+                                    onAddToPlaylist = { onAddToPlaylist(song) }
                                 )
                             }
                         }
                     }
                 }
             }
-        } else if (filtered.isEmpty()) {
+        } else if (filteredSongs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.player_no_songs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(filtered, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
+                itemsIndexed(filteredSongs, key = { _, item -> item.id }, contentType = { _, _ -> "music_track" }) { index, song ->
                     MusicTrackCard(
                         song = song,
                         isPlaying = song.uriString == currentPlayingUri,
-                        onClick = { onPlaySongList(filtered, index) },
+                        onClick = { onPlaySongList(filteredSongs, index) },
                         onToggleFavorite = { onToggleFavorite(song) },
                         onEditMetadata = { onEditMetadata(song) },
-                        onAddToPlaylist = { onAddToPlaylist(song) },
-                        modifier = Modifier.animateItem()
+                        onAddToPlaylist = { onAddToPlaylist(song) }
                     )
                 }
             }
@@ -1338,9 +1304,11 @@ private fun MusicTrackCard(
 ) {
     val tokens = LocalVaTokens.current
     val context = LocalContext.current
+    val artShape = remember { RoundedCornerShape(10.dp) }
     VaCard(
         onClick = onClick,
         highlighted = isPlaying,
+        lightweight = true,
         contentPadding = PaddingValues(10.dp),
         modifier = modifier
     ) {
@@ -1348,7 +1316,7 @@ private fun MusicTrackCard(
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(artShape)
                     .background(tokens.elevatedSurface),
                 contentAlignment = Alignment.Center
             ) {

@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import com.tkofficial.videodownloder.database.DownloadedMediaEntity
@@ -132,33 +133,52 @@ class MediaLibraryRepository(
             }
         }
 
-        // 2. Videos inside user-granted SAF folders (zero broad permission needed)
+        // 2. Videos inside user-granted SAF folders (single-cursor IPC query for fast folder loads)
         persistedFolderUris.forEach { treeStr ->
             runCatching {
                 val treeUri = Uri.parse(treeStr)
-                val docTree = DocumentFile.fromTreeUri(context, treeUri) ?: return@runCatching
-                val folderName = docTree.name ?: "Local Folder"
-                docTree.listFiles().forEach { doc ->
-                    val type = doc.type.orEmpty()
-                    val name = doc.name.orEmpty()
-                    if (doc.isFile && (type.startsWith("video/") || FormatUtils.classifyMimeType(type, name).name == "VIDEO")) {
-                        val uriStr = doc.uri.toString()
-                        result.putIfAbsent(
-                            uriStr,
-                            DeviceMediaItem(
-                                id = "saf_${uriStr.hashCode()}",
-                                uriString = uriStr,
-                                title = name.substringBeforeLast('.'),
-                                fileName = name,
-                                folderName = folderName,
-                                durationMs = 0L,
-                                sizeBytes = doc.length(),
-                                mimeType = type.ifBlank { "video/mp4" },
-                                isVideo = true,
-                                isDownloadedByApp = false,
-                                dateAddedSec = doc.lastModified() / 1000L
+                val docTree = DocumentFile.fromTreeUri(context, treeUri)
+                val folderName = docTree?.name ?: "Local Folder"
+                val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
+                val safProjection = arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                )
+                context.contentResolver.query(childrenUri, safProjection, null, null, null)?.use { cursor ->
+                    val docIdCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                    val modCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    while (cursor.moveToNext()) {
+                        val docId = if (docIdCol >= 0) cursor.getString(docIdCol).orEmpty() else continue
+                        val type = if (mimeCol >= 0) cursor.getString(mimeCol).orEmpty() else ""
+                        if (type == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                        val name = if (nameCol >= 0) cursor.getString(nameCol).orEmpty() else ""
+                        if (type.startsWith("video/") || FormatUtils.classifyMimeType(type, name).name == "VIDEO") {
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            val uriStr = docUri.toString()
+                            result.putIfAbsent(
+                                uriStr,
+                                DeviceMediaItem(
+                                    id = "saf_${uriStr.hashCode()}",
+                                    uriString = uriStr,
+                                    title = name.substringBeforeLast('.').ifBlank { "Video" },
+                                    fileName = name.ifBlank { "video.mp4" },
+                                    folderName = folderName,
+                                    durationMs = 0L,
+                                    sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L,
+                                    mimeType = type.ifBlank { "video/mp4" },
+                                    isVideo = true,
+                                    isDownloadedByApp = false,
+                                    dateAddedSec = if (modCol >= 0) cursor.getLong(modCol).coerceAtLeast(0L) / 1000L else 0L
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }

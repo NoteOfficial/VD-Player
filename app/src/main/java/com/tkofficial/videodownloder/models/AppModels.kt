@@ -1,6 +1,7 @@
 package com.tkofficial.videodownloder.models
 
 import androidx.annotation.StringRes
+import androidx.compose.runtime.Immutable
 import com.example.R
 import kotlinx.serialization.Serializable
 
@@ -80,6 +81,7 @@ sealed interface UiState<out T> {
     data class Error(val message: String) : UiState<Nothing>
 }
 
+@Immutable
 data class MediaFormatOption(
     val id: String,
     val label: String,
@@ -90,6 +92,7 @@ data class MediaFormatOption(
     val supportsRange: Boolean
 )
 
+@Immutable
 data class AnalyzedMedia(
     val sourceUrl: String,
     val title: String,
@@ -104,6 +107,7 @@ data class AnalyzedMedia(
     val analysisNotes: String? = null
 )
 
+@Immutable
 data class DeviceMediaItem(
     val id: String,
     val uriString: String,
@@ -127,6 +131,7 @@ data class DeviceMediaItem(
     val albumArtUri: String? = null
 )
 
+@Immutable
 data class BrowserTab(
     val id: String,
     val title: String,
@@ -135,6 +140,7 @@ data class BrowserTab(
     val progress: Int = 0
 )
 
+@Immutable
 data class DetectedWebMedia(
     val url: String,
     val mimeType: String,
@@ -142,6 +148,7 @@ data class DetectedWebMedia(
     val category: MediaCategory
 )
 
+@Immutable
 data class FileEntry(
     val name: String,
     val path: String,
@@ -154,6 +161,7 @@ data class FileEntry(
     val contentUri: String? = null
 )
 
+@Immutable
 data class StorageSummary(
     val totalBytes: Long,
     val usedBytes: Long,

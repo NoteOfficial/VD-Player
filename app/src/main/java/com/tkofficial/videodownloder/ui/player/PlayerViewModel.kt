@@ -96,6 +96,69 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _songs = MutableStateFlow<List<DeviceMediaItem>>(emptyList())
     val songs: StateFlow<List<DeviceMediaItem>> = _songs.asStateFlow()
 
+    val videoFolderMap: StateFlow<Map<String, List<DeviceMediaItem>>> = _videos
+        .map { list ->
+            list.groupBy { it.folderName.ifBlank { "Local Folder" } }
+                .entries
+                .sortedBy { it.key.lowercase() }
+                .associate { it.key to it.value }
+        }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val videoFolderEntries: StateFlow<List<Pair<String, List<DeviceMediaItem>>>> = videoFolderMap
+        .map { it.entries.map { e -> e.key to e.value } }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredVideos: StateFlow<List<DeviceMediaItem>> = combine(_videos, _videoTab) { list, tab ->
+        when (tab) {
+            VideoSubTab.ALL, VideoSubTab.FOLDERS, VideoSubTab.PLAYLISTS -> list
+            VideoSubTab.RECENT -> list.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
+            VideoSubTab.FAVORITES -> list.filter { it.isFavorite }
+            VideoSubTab.DOWNLOADED -> list.filter { it.isDownloadedByApp }
+            VideoSubTab.CONTINUE -> list.filter { it.lastPositionMs > 1000L }
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val musicGroupMap: StateFlow<Map<String, List<DeviceMediaItem>>> = combine(_songs, _musicTab) { list, tab ->
+        when (tab) {
+            MusicSubTab.ALBUMS -> list.groupBy { it.album.ifBlank { "Unknown Album" } }
+            MusicSubTab.ARTISTS -> list.groupBy { it.artist.ifBlank { "Unknown Artist" } }
+            MusicSubTab.FOLDERS -> list.groupBy { it.folderName.ifBlank { "Music" } }
+            else -> emptyMap()
+        }.entries.sortedBy { it.key.lowercase() }.associate { it.key to it.value }
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val musicGroupEntries: StateFlow<List<Pair<String, List<DeviceMediaItem>>>> = musicGroupMap
+        .map { it.entries.map { e -> e.key to e.value } }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredSongs: StateFlow<List<DeviceMediaItem>> = combine(_songs, _musicTab) { list, tab ->
+        when (tab) {
+            MusicSubTab.ALL_SONGS,
+            MusicSubTab.ALBUMS,
+            MusicSubTab.ARTISTS,
+            MusicSubTab.FOLDERS,
+            MusicSubTab.PLAYLISTS -> list
+            MusicSubTab.FAVORITES -> list.filter { it.isFavorite }
+            MusicSubTab.RECENT -> list.filter { it.lastPlayedAt > 0L }.sortedByDescending { it.lastPlayedAt }
+            MusicSubTab.MOST_PLAYED -> list.filter { it.playCount > 0 }.sortedByDescending { it.playCount }
+            MusicSubTab.RECENTLY_ADDED -> list.sortedByDescending { it.dateAddedSec }
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _pickedVideoUris = MutableStateFlow<Set<String>>(emptySet())
     private val _pickedAudioUris = MutableStateFlow<Set<String>>(emptySet())
     private val _hasVideoPermission = MutableStateFlow(false)

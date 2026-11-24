@@ -1,10 +1,12 @@
 package com.tkofficial.videodownloder.database
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+@Immutable
 @Entity(
     tableName = "downloads",
     indices = [
@@ -79,6 +81,7 @@ data class DownloadQueueEntity(
     val addedAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(
     tableName = "albums",
     indices = [Index(value = ["name"], unique = true)]
@@ -90,6 +93,7 @@ data class AlbumEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(
     tableName = "downloaded_media",
     foreignKeys = [
@@ -140,6 +144,7 @@ data class FavoriteEntity(
     val addedAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(tableName = "playlists")
 data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -210,6 +215,7 @@ data class ThemeSettingsEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(
     tableName = "notifications",
     indices = [Index(value = ["category"]), Index(value = ["createdAt"])]
@@ -224,6 +230,7 @@ data class AppNotificationEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(
     tableName = "vault_metadata",
     indices = [Index(value = ["encryptedFileName"], unique = true)]

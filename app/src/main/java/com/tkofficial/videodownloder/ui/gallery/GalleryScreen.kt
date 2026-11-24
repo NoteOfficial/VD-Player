@@ -101,6 +101,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.tkofficial.videodownloder.core.FastMediaThumb
 import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.database.AlbumEntity
@@ -115,14 +116,39 @@ import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.delay
 import java.io.File
 
-private fun mediaModelData(item: DownloadedMediaEntity): Any {
-    val fp = item.filePath
-    return if (fp.isNotBlank() && File(fp).exists()) File(fp) else Uri.parse(item.contentUri)
+private fun mediaThumbData(item: DownloadedMediaEntity): FastMediaThumb {
+    val preferUri = if (item.id < 0L && item.contentUri.isNotBlank()) {
+        item.contentUri
+    } else if (item.filePath.isNotBlank()) {
+        Uri.fromFile(File(item.filePath)).toString()
+    } else {
+        item.contentUri
+    }
+    return FastMediaThumb(
+        uriString = preferUri,
+        filePath = item.filePath,
+        isVideo = item.mediaType == "VIDEO"
+    )
+}
+
+private fun mediaViewerData(item: DownloadedMediaEntity): Any {
+    return if (item.id < 0L && item.contentUri.isNotBlank()) {
+        Uri.parse(item.contentUri)
+    } else if (item.filePath.isNotBlank()) {
+        File(item.filePath)
+    } else {
+        Uri.parse(item.contentUri)
+    }
 }
 
 private fun mediaPlayUri(item: DownloadedMediaEntity): String {
-    val fp = item.filePath
-    return if (fp.isNotBlank() && File(fp).exists()) Uri.fromFile(File(fp)).toString() else item.contentUri
+    return if (item.id < 0L && item.contentUri.isNotBlank()) {
+        item.contentUri
+    } else if (item.filePath.isNotBlank()) {
+        Uri.fromFile(File(item.filePath)).toString()
+    } else {
+        item.contentUri
+    }
 }
 
 @Composable
@@ -409,6 +435,7 @@ fun GalleryScreen(
                         albums.forEach { album ->
                             VaCard(
                                 onClick = { viewModel.selectAlbum(album.id) },
+                                lightweight = true,
                                 contentPadding = PaddingValues(10.dp),
                                 modifier = Modifier.width(136.dp)
                             ) {
@@ -481,6 +508,7 @@ fun GalleryScreen(
                 }
             }
         } else if (isGrid) {
+            val gridItemShape = remember(tokens.smallRadius) { RoundedCornerShape(tokens.smallRadius) }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(gridColumns.coerceIn(2, 5)),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -491,13 +519,12 @@ fun GalleryScreen(
                     val isSelected = selectedIds.contains(item.id)
                     Box(
                         modifier = Modifier
-                            .animateItem()
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(tokens.smallRadius))
+                            .clip(gridItemShape)
                             .border(
                                 width = if (isSelected) 2.5.dp else 1.dp,
                                 color = if (isSelected) tokens.primaryAccent else tokens.borderSubtle,
-                                shape = RoundedCornerShape(tokens.smallRadius)
+                                shape = gridItemShape
                             )
                             .clickable {
                                 if (selectedIds.isNotEmpty()) {
@@ -511,8 +538,9 @@ fun GalleryScreen(
                     ) {
                         val thumbModel = remember(item.filePath, item.contentUri, item.id) {
                             ImageRequest.Builder(context)
-                                .data(mediaModelData(item))
-                                .size(360)
+                                .data(mediaThumbData(item))
+                                .size(320)
+                                .crossfade(false)
                                 .build()
                         }
                         AsyncImage(
@@ -569,6 +597,7 @@ fun GalleryScreen(
                 }
             }
         } else {
+            val listThumbShape = remember { RoundedCornerShape(10.dp) }
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
@@ -582,21 +611,22 @@ fun GalleryScreen(
                                 viewerItem = item
                             }
                         },
-                        contentPadding = PaddingValues(10.dp),
-                        modifier = Modifier.animateItem()
+                        lightweight = true,
+                        contentPadding = PaddingValues(10.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val listThumb = remember(item.filePath, item.contentUri, item.id) {
                                 ImageRequest.Builder(context)
-                                    .data(mediaModelData(item))
-                                    .size(240)
+                                    .data(mediaThumbData(item))
+                                    .size(200)
+                                    .crossfade(false)
                                     .build()
                             }
                             AsyncImage(
                                 model = listThumb,
                                 contentDescription = item.title,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                                modifier = Modifier.size(56.dp).clip(listThumbShape)
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -658,7 +688,7 @@ fun GalleryScreen(
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 val slideReq = remember(current.id, current.filePath, current.contentUri) {
                     ImageRequest.Builder(context)
-                        .data(mediaModelData(current))
+                        .data(mediaViewerData(current))
                         .size(1920)
                         .build()
                 }
@@ -834,7 +864,7 @@ private fun FullscreenImageViewerDialog(
             val viewerContext = LocalContext.current
             val viewerReq = remember(item.id, item.filePath, item.contentUri) {
                 ImageRequest.Builder(viewerContext)
-                    .data(mediaModelData(item))
+                    .data(mediaViewerData(item))
                     .size(1920)
                     .build()
             }

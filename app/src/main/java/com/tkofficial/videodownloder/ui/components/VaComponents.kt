@@ -177,17 +177,55 @@ fun VaCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     highlighted: Boolean = false,
+    lightweight: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val tokens = LocalVaTokens.current
-    val shape = RoundedCornerShape(tokens.cardRadius)
+    val shape = remember(tokens.cardRadius) { RoundedCornerShape(tokens.cardRadius) }
+
+    if (lightweight || onClick == null) {
+        val borderColor = if (highlighted) {
+            tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
+        } else {
+            tokens.borderSubtle
+        }
+        val elevation = if (lightweight || tokens.isDark && !highlighted) {
+            0.dp
+        } else {
+            (tokens.shadowIntensity * if (highlighted) 8f else 5f).dp
+        }
+        val cardModifier = modifier
+            .let { m ->
+                if (elevation > 0.dp) {
+                    m.shadow(
+                        elevation = elevation,
+                        shape = shape,
+                        ambientColor = if (highlighted) tokens.glowColor else Color.Black,
+                        spotColor = if (highlighted) tokens.primaryAccent else Color.Black
+                    )
+                } else {
+                    m
+                }
+            }
+            .clip(shape)
+            .background(tokens.surfaceGradient, shape)
+            .border(BorderStroke(1.dp, borderColor), shape)
+            .let { m ->
+                if (onClick != null) m.clickable(onClick = onClick) else m
+            }
+            .padding(contentPadding)
+
+        Column(modifier = cardModifier, content = content)
+        return
+    }
+
     val elevation = if (tokens.isDark && !highlighted) 0.dp else (tokens.shadowIntensity * if (highlighted) 8f else 5f).dp
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
     val pressScale by animateFloatAsState(
-        targetValue = if (onClick != null && pressed && !tokens.reduceMotion) 0.972f else 1f,
+        targetValue = if (pressed && !tokens.reduceMotion) 0.972f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -196,7 +234,7 @@ fun VaCard(
     )
 
     val targetBorder = when {
-        pressed && onClick != null -> tokens.primaryAccent.copy(alpha = 0.68f)
+        pressed -> tokens.primaryAccent.copy(alpha = 0.68f)
         highlighted -> tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
         else -> tokens.borderSubtle
     }
@@ -208,7 +246,7 @@ fun VaCard(
 
     val cardModifier = modifier
         .graphicsLayer {
-            if (onClick != null && !tokens.reduceMotion) {
+            if (!tokens.reduceMotion) {
                 scaleX = pressScale
                 scaleY = pressScale
             }
@@ -228,17 +266,11 @@ fun VaCard(
         .clip(shape)
         .background(tokens.surfaceGradient, shape)
         .border(BorderStroke(1.dp, borderColor), shape)
-        .let { m ->
-            if (onClick != null) {
-                m.clickable(
-                    interactionSource = interactionSource,
-                    indication = androidx.compose.foundation.LocalIndication.current,
-                    onClick = onClick
-                )
-            } else {
-                m
-            }
-        }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = androidx.compose.foundation.LocalIndication.current,
+            onClick = onClick
+        )
         .padding(contentPadding)
 
     Column(modifier = cardModifier, content = content)
@@ -251,9 +283,67 @@ fun VaFolderCard(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    highlighted: Boolean = false
+    highlighted: Boolean = false,
+    lightweight: Boolean = false
 ) {
     val tokens = LocalVaTokens.current
+    val shape = remember(tokens.cardRadius) { RoundedCornerShape(tokens.cardRadius) }
+
+    if (lightweight) {
+        val borderColor = if (highlighted) {
+            tokens.primaryAccent.copy(alpha = 0.45f + tokens.glowIntensity * 0.35f)
+        } else {
+            tokens.borderSubtle
+        }
+        Row(
+            modifier = modifier
+                .clip(shape)
+                .background(tokens.surfaceGradient, shape)
+                .border(BorderStroke(1.dp, borderColor), shape)
+                .clickable(onClick = onClick)
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(tokens.primaryAccent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tokens.primaryAccent,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val cardScale by animateFloatAsState(
@@ -271,7 +361,6 @@ fun VaFolderCard(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
         label = "folder_chevron_offset"
     )
-    val shape = RoundedCornerShape(tokens.cardRadius)
     val borderColor by animateColorAsState(
         targetValue = when {
             pressed -> tokens.primaryAccent.copy(alpha = 0.72f)

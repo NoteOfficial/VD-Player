@@ -105,6 +105,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.tkofficial.videodownloder.core.FastMediaThumb
 import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.database.DownloadEntity
@@ -519,6 +520,7 @@ fun HomeScreen(
                     VaCard(
                         onClick = action,
                         highlighted = isSelectedFilter,
+                        lightweight = true,
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                         modifier = Modifier.width(88.dp)
                     ) {
@@ -896,10 +898,17 @@ private fun DownloadItemCard(
             ) {
                 if (item.status == "COMPLETED" && item.mediaType in setOf("IMAGE", "VIDEO")) {
                     val itemContext = LocalContext.current
-                    val thumbModel = remember(item.localPath, item.id) {
+                    val thumbModel = remember(item.localPath, item.id, item.mediaType) {
                         ImageRequest.Builder(itemContext)
-                            .data(File(item.localPath))
-                            .size(240)
+                            .data(
+                                FastMediaThumb(
+                                    uriString = android.net.Uri.fromFile(File(item.localPath)).toString(),
+                                    filePath = item.localPath,
+                                    isVideo = item.mediaType == "VIDEO"
+                                )
+                            )
+                            .size(200)
+                            .crossfade(false)
                             .build()
                     }
                     AsyncImage(

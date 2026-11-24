@@ -45,3 +45,15 @@
 
 # Keep Biometric
 -keep class androidx.biometric.** { *; }
+
+# Keep App Models and Navigation Routes (kotlinx.serialization + Moshi)
+-keep class com.tkofficial.videodownloder.models.** { *; }
+-keep class com.tkofficial.videodownloder.navigation.** { *; }
+-keep class com.tkofficial.videodownloder.data.AppSettings { *; }
+
+# Keep Coil & OkHttp runtime classes cleanly
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn retrofit2.**
+-keep class coil.** { *; }
+

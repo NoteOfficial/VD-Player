@@ -241,11 +241,12 @@ fun FileManagerScreen(
                             subtitle = stringResource(R.string.fm_items_count, entry.childCount),
                             icon = Icons.Rounded.Folder,
                             onClick = { viewModel.loadDirectory(File(entry.path)) },
-                            modifier = Modifier.animateItem()
+                            lightweight = true
                         )
                     } else {
                     VaCard(
                         highlighted = isSel,
+                        lightweight = true,
                         onClick = {
                             if (entry.isDirectory) {
                                 viewModel.loadDirectory(File(entry.path))
@@ -253,8 +254,7 @@ fun FileManagerScreen(
                                 selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
                             }
                         },
-                        contentPadding = PaddingValues(12.dp),
-                        modifier = Modifier.animateItem()
+                        contentPadding = PaddingValues(12.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -564,7 +564,7 @@ fun NotificationCenterScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(displayed, key = { it.id }, contentType = { "notif_item" }) { n ->
-                        VaCard(highlighted = !n.isRead, contentPadding = PaddingValues(12.dp), modifier = Modifier.animateItem()) {
+                        VaCard(highlighted = !n.isRead, lightweight = true, contentPadding = PaddingValues(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Notifications, contentDescription = null, tint = tokens.iconTint)
                                 Spacer(Modifier.width(10.dp))

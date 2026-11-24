@@ -136,20 +136,27 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
+        val mediaDecodeDispatcher = Dispatchers.IO.limitedParallelism(3)
         return ImageLoader.Builder(this)
+            .fetcherDispatcher(mediaDecodeDispatcher)
+            .decoderDispatcher(mediaDecodeDispatcher)
+            .bitmapFactoryMaxParallelism(2)
+            .allowRgb565(true)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.20)
+                    .maxSizePercent(0.25)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("coil_image_cache"))
-                    .maxSizeBytes(96L * 1024L * 1024L)
+                    .maxSizeBytes(128L * 1024L * 1024L)
                     .build()
             }
             .respectCacheHeaders(false)
             .components {
+                add(FastMediaThumbKeyer())
+                add(FastMediaThumbFetcher.Factory())
                 if (Build.VERSION.SDK_INT >= 28) {
                     add(ImageDecoderDecoder.Factory())
                 } else {
@@ -157,7 +164,6 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
                 }
                 add(VideoFrameDecoder.Factory())
             }
-            .crossfade(120)
             .build()
     }
 }
