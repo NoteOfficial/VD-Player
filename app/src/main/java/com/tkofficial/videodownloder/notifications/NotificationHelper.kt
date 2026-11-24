@@ -9,17 +9,23 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.R
 import com.tkofficial.videodownloder.MainActivity
+import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.database.DownloadEntity
+import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import java.io.File
 
-class NotificationHelper(private val context: Context) {
+class NotificationHelper(
+    private val context: Context,
+    private val languageProvider: () -> AppLanguage = { AppLanguage.ENGLISH }
+) {
 
     companion object {
         const val CHANNEL_ACTIVE = "va_downloads_active"
@@ -40,11 +46,15 @@ class NotificationHelper(private val context: Context) {
 
     private val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+    private fun str(@StringRes resId: Int, vararg args: Any): String {
+        return LocaleHelper.getLocalizedString(context, languageProvider(), resId, *args)
+    }
+
     fun createChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val active = NotificationChannel(
                 CHANNEL_ACTIVE,
-                context.getString(R.string.notif_channel_active),
+                str(R.string.notif_channel_active),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Live download progress and foreground service"
@@ -53,7 +63,7 @@ class NotificationHelper(private val context: Context) {
 
             val complete = NotificationChannel(
                 CHANNEL_COMPLETE,
-                context.getString(R.string.notif_channel_complete),
+                str(R.string.notif_channel_complete),
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Completed and failed download alerts"
@@ -61,7 +71,7 @@ class NotificationHelper(private val context: Context) {
 
             val playback = NotificationChannel(
                 CHANNEL_PLAYBACK,
-                context.getString(R.string.notif_channel_playback),
+                str(R.string.notif_channel_playback),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Background audio and video playback controls"
@@ -69,7 +79,7 @@ class NotificationHelper(private val context: Context) {
 
             val alerts = NotificationChannel(
                 CHANNEL_ALERTS,
-                context.getString(R.string.notif_channel_alerts),
+                str(R.string.notif_channel_alerts),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Security, vault, and storage alerts"
@@ -97,8 +107,8 @@ class NotificationHelper(private val context: Context) {
 
         return NotificationCompat.Builder(context, CHANNEL_ACTIVE)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(context.getString(R.string.notif_downloads_summary, activeCount))
+            .setContentTitle(str(R.string.app_name))
+            .setContentText(str(R.string.notif_downloads_summary, activeCount))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setGroup(GROUP_DOWNLOADS)
@@ -120,11 +130,11 @@ class NotificationHelper(private val context: Context) {
         } else {
             FormatUtils.formatBytes(downloaded)
         }
-        val pausedText = context.getString(R.string.status_paused)
+        val pausedText = str(R.string.status_paused)
         val statusLine = if (isPaused) {
             "$pausedText • $sizeText"
         } else {
-            val etaText = context.getString(R.string.eta_prefix, FormatUtils.formatEta(entity.etaSeconds))
+            val etaText = str(R.string.eta_prefix, FormatUtils.formatEta(entity.etaSeconds))
             "$percent% • $sizeText • ${FormatUtils.formatSpeed(entity.speedBytesPerSec)} • $etaText"
         }
 
@@ -140,7 +150,7 @@ class NotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ACTIVE)
             .setSmallIcon(if (isPaused) android.R.drawable.ic_media_pause else android.R.drawable.stat_sys_download)
-            .setContentTitle("${context.getString(R.string.app_name)} • ${entity.fileName}")
+            .setContentTitle("${str(R.string.app_name)} • ${entity.fileName}")
             .setContentText(statusLine)
             .setSubText(if (isPaused) pausedText else "$percent%")
             .setProgress(100, percent, indeterminate && !isPaused)
@@ -152,19 +162,19 @@ class NotificationHelper(private val context: Context) {
         if (isPaused) {
             builder.addAction(
                 android.R.drawable.ic_media_play,
-                context.getString(R.string.action_resume),
+                str(R.string.action_resume),
                 actionPendingIntent(ACTION_RESUME, entity.id, 1)
             )
         } else {
             builder.addAction(
                 android.R.drawable.ic_media_pause,
-                context.getString(R.string.action_pause),
+                str(R.string.action_pause),
                 actionPendingIntent(ACTION_PAUSE, entity.id, 2)
             )
         }
         builder.addAction(
             android.R.drawable.ic_menu_close_clear_cancel,
-            context.getString(R.string.action_cancel),
+            str(R.string.action_cancel),
             actionPendingIntent(ACTION_CANCEL, entity.id, 3)
         )
 
@@ -192,11 +202,11 @@ class NotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETE)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(context.getString(R.string.notif_download_completed))
+            .setContentTitle(str(R.string.notif_download_completed))
             .setContentText("${entity.fileName} (${FormatUtils.formatBytes(entity.totalBytes.coerceAtLeast(entity.downloadedBytes))})")
             .setAutoCancel(true)
             .setContentIntent(openIntent)
-            .addAction(android.R.drawable.ic_menu_view, context.getString(R.string.action_open), openIntent)
+            .addAction(android.R.drawable.ic_menu_view, str(R.string.action_open), openIntent)
 
         if (file.exists()) {
             val contentUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -208,10 +218,10 @@ class NotificationHelper(private val context: Context) {
             val sharePending = PendingIntent.getActivity(
                 context,
                 notificationIdFor(entity.id) + 50000,
-                Intent.createChooser(shareIntent, context.getString(R.string.action_share)),
+                Intent.createChooser(shareIntent, str(R.string.action_share)),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            builder.addAction(android.R.drawable.ic_menu_share, context.getString(R.string.action_share), sharePending)
+            builder.addAction(android.R.drawable.ic_menu_share, str(R.string.action_share), sharePending)
         }
 
         try {
@@ -237,19 +247,19 @@ class NotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETE)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("${context.getString(R.string.notif_download_failed)} • ${entity.fileName}")
+            .setContentTitle("${str(R.string.notif_download_failed)} • ${entity.fileName}")
             .setContentText(reason)
             .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
             .setAutoCancel(true)
             .setContentIntent(detailsIntent)
             .addAction(
                 android.R.drawable.ic_menu_rotate,
-                context.getString(R.string.action_retry),
+                str(R.string.action_retry),
                 actionPendingIntent(ACTION_RETRY, entity.id, 4)
             )
             .addAction(
                 android.R.drawable.ic_menu_info_details,
-                context.getString(R.string.action_details),
+                str(R.string.action_details),
                 detailsIntent
             )
 
@@ -274,8 +284,8 @@ class NotificationHelper(private val context: Context) {
         val formatted = FormatUtils.formatBytes(availableBytes.coerceAtLeast(0L))
         val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle(context.getString(R.string.notif_storage_warning_title))
-            .setContentText(context.getString(R.string.notif_storage_warning_body, formatted))
+            .setContentTitle(str(R.string.notif_storage_warning_title))
+            .setContentText(str(R.string.notif_storage_warning_body, formatted))
             .setAutoCancel(true)
             .setContentIntent(openIntent)
 

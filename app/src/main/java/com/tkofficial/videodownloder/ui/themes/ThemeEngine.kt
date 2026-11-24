@@ -27,9 +27,24 @@ import com.tkofficial.videodownloder.models.NavStyle
 import com.tkofficial.videodownloder.models.ThemeConfig
 import com.tkofficial.videodownloder.models.ThemePreset
 
-val DisplayFontFamily = FontFamily(Font(R.font.space_grotesk, FontWeight.Bold))
-val BodyFontFamily = FontFamily(Font(R.font.plus_jakarta_sans, FontWeight.Normal))
-val MonoFontFamily = FontFamily(Font(R.font.jetbrains_mono, FontWeight.Medium))
+val DisplayFontFamily = FontFamily(
+    Font(R.font.space_grotesk, FontWeight.Normal),
+    Font(R.font.space_grotesk, FontWeight.Medium),
+    Font(R.font.space_grotesk, FontWeight.SemiBold),
+    Font(R.font.space_grotesk, FontWeight.Bold)
+)
+val BodyFontFamily = FontFamily(
+    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
+    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
+    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
+    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
+)
+val MonoFontFamily = FontFamily(
+    Font(R.font.jetbrains_mono, FontWeight.Normal),
+    Font(R.font.jetbrains_mono, FontWeight.Medium),
+    Font(R.font.jetbrains_mono, FontWeight.SemiBold),
+    Font(R.font.jetbrains_mono, FontWeight.Bold)
+)
 
 @Immutable
 data class VaTokens(
@@ -74,14 +89,14 @@ data class VaTokens(
 val LocalVaTokens = staticCompositionLocalOf {
     VaTokens(
         isDark = true,
-        primaryAccent = Color(0xFF286BFF),
+        primaryAccent = Color(0xFF4D8EFF),
         secondaryAccent = Color(0xFF7957FF),
         tertiaryAccent = Color(0xFF27D7FF),
-        background = Color(0xFF10172A),
-        cardSurface = Color(0xFF171F33),
-        elevatedSurface = Color(0xFF1E2942),
+        background = Color(0xFF0A0F1E),
+        cardSurface = Color(0xFF131C33),
+        elevatedSurface = Color(0xFF1C2847),
         iconTint = Color(0xFF27D7FF),
-        borderSubtle = Color(0x2A7957FF),
+        borderSubtle = Color(0x4D4D8EFF),
         glowColor = Color(0xFF27D7FF),
         success = Color(0xFF22C55E),
         warning = Color(0xFFF59E0B),
@@ -114,14 +129,14 @@ private data class PresetPalette(
 private fun paletteForPreset(preset: ThemePreset): PresetPalette = when (preset) {
     ThemePreset.DARK -> PresetPalette(
         isDark = true,
-        primary = Color(0xFF286BFF),
+        primary = Color(0xFF4D8EFF),
         secondary = Color(0xFF7957FF),
         tertiary = Color(0xFF27D7FF),
-        background = Color(0xFF10172A),
-        card = Color(0xFF171F33),
-        elevated = Color(0xFF1F2A44),
-        onBg = Color(0xFFF1F5F9),
-        onCard = Color(0xFFE2E8F0),
+        background = Color(0xFF0A0F1E),
+        card = Color(0xFF131C33),
+        elevated = Color(0xFF1C2847),
+        onBg = Color(0xFFF8FAFC),
+        onCard = Color(0xFFF1F5F9),
         icon = Color(0xFF27D7FF)
     )
     ThemePreset.LIGHT -> PresetPalette(
@@ -138,14 +153,14 @@ private fun paletteForPreset(preset: ThemePreset): PresetPalette = when (preset)
     )
     ThemePreset.AMOLED -> PresetPalette(
         isDark = true,
-        primary = Color(0xFF286BFF),
+        primary = Color(0xFF4D8EFF),
         secondary = Color(0xFF7957FF),
         tertiary = Color(0xFF27D7FF),
         background = Color(0xFF000000),
         card = Color(0xFF0B0E17),
         elevated = Color(0xFF131826),
         onBg = Color(0xFFFFFFFF),
-        onCard = Color(0xFFE2E8F0),
+        onCard = Color(0xFFF1F5F9),
         icon = Color(0xFF27D7FF)
     )
     ThemePreset.NEON_GLOW -> PresetPalette(
@@ -250,7 +265,7 @@ fun DownloaderVaTheme(
         elevatedSurface = base.elevated,
         iconTint = iconColor,
         borderSubtle = accent.copy(
-            alpha = if (highContrast) 0.58f else if (base.isDark) 0.24f else 0.16f
+            alpha = if (highContrast) 0.65f else if (base.isDark) 0.32f else 0.18f
         ),
         glowColor = base.tertiary,
         success = Color(0xFF22C55E),
@@ -279,8 +294,8 @@ fun DownloaderVaTheme(
             surface = card,
             onSurface = base.onCard,
             surfaceVariant = base.elevated,
-            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.96f else 0.75f),
-            outline = accent.copy(alpha = if (highContrast) 0.70f else 0.35f),
+            onSurfaceVariant = base.onCard.copy(alpha = if (highContrast) 0.98f else 0.86f),
+            outline = accent.copy(alpha = if (highContrast) 0.78f else 0.44f),
             error = tokens.danger
         )
     } else {

@@ -25,7 +25,7 @@
     <string name="perm_allow">Allow</string>
     <string name="perm_open_settings">App Settings</string>
     <string name="perm_section_title">App Permissions</string>
-    <string name="perm_section_desc">Manage runtime permissions required by optional features. Photos and videos use Android Photo Picker with zero broad storage access.</string>
+    <string name="perm_section_desc">Manage runtime permissions for notifications, device videos, photos, audio library, and QR camera scanner.</string>
     <string name="perm_notif_name">Notifications (Android 13+)</string>
     <string name="perm_audio_name">Device Music Library</string>
     <string name="perm_camera_name">Camera (QR Scanner)</string>
@@ -131,7 +131,7 @@
 
     <!-- Gallery -->
     <string name="gallery_title">Downloaded Gallery</string>
-    <string name="gallery_subtitle">Only media downloaded via VD Player</string>
+    <string name="gallery_subtitle">Device photos, videos &amp; VD Player downloads</string>
     <string name="gallery_all">All</string>
     <string name="gallery_photos">Photos</string>
     <string name="gallery_videos">Videos</string>
@@ -139,7 +139,7 @@
     <string name="gallery_favorites">Favorites</string>
     <string name="gallery_recent">Recent</string>
     <string name="gallery_trash">Trash</string>
-    <string name="gallery_empty">No downloaded media yet. Completed image &amp; video downloads appear here.</string>
+    <string name="gallery_empty">No photos or videos found yet. Grant media access or download media in VD Player.</string>
     <string name="gallery_new_album">New Album</string>
     <string name="gallery_slideshow">Slideshow</string>
     <string name="gallery_restore">Restore</string>
@@ -181,7 +181,7 @@
     <string name="player_artists">Artists</string>
     <string name="player_most_played">Most Played</string>
     <string name="player_recently_added">Recently Added</string>
-    <string name="player_import_videos">Pick Local Videos</string>
+    <string name="player_import_videos">Import Videos</string>
     <string name="player_import_audio">Scan / Pick Audio</string>
     <string name="player_audio_only">Audio Only (Background)</string>
     <string name="player_pip">Picture-in-Picture</string>
@@ -663,4 +663,19 @@
     <string name="api_import_failed">Failed to import API configuration JSON.</string>
     <string name="api_exported_ok">Exported API JSON configuration.</string>
     <string name="api_export_failed">Failed to export API configuration JSON.</string>
+
+    <!-- Device Media & Runtime Permissions Extras -->
+    <string name="perm_video_name">Device Video Library</string>
+    <string name="perm_photos_name">Device Photos &amp; Gallery</string>
+    <string name="perm_all_title">Grant Essential Permissions</string>
+    <string name="perm_all_desc">Allow Video, Photos, Music, and Notification access so VD Player can load device media and live download controls.</string>
+    <string name="perm_grant_all_btn">Grant All</string>
+    <string name="gallery_perm_title">Access Device Photos &amp; Videos</string>
+    <string name="gallery_perm_desc">Grant photo &amp; video permission to browse all device media alongside your downloads.</string>
+    <string name="gallery_scan_btn">Allow Access</string>
+    <string name="player_scan_video_title">Scan Device Video Library</string>
+    <string name="player_scan_video_desc">Grant video permission to list all device videos, or import individual files above.</string>
+    <string name="set_quick_theme">Quick Theme &amp; Appearance</string>
+    <string name="set_open_theme_studio">Open Theme Studio</string>
+    <string name="gallery_device_item_note">Device media is managed via Android Gallery. Copy to an album or move a copy to Vault.</string>
 </resources>

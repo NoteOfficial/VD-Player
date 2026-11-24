@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.ui.components.VaCard
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
@@ -229,7 +230,11 @@ fun BrowserScreen(
                             showMenu = false
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cm.setPrimaryClip(ClipData.newPlainText("URL", currentTab.url))
-                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.browser_copied_link)) }
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    LocaleHelper.getLocalizedString(context, settings.language, R.string.browser_copied_link)
+                                )
+                            }
                         }
                     )
                     DropdownMenuItem(

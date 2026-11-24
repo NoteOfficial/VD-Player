@@ -60,7 +60,7 @@ fun VaCard(
 ) {
     val tokens = LocalVaTokens.current
     val shape = RoundedCornerShape(tokens.cardRadius)
-    val elevation = (tokens.shadowIntensity * if (highlighted) 14f else 6f).dp
+    val elevation = if (tokens.isDark && !highlighted) 0.dp else (tokens.shadowIntensity * if (highlighted) 8f else 5f).dp
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
@@ -91,12 +91,18 @@ fun VaCard(
                 scaleY = pressScale
             }
         }
-        .shadow(
-            elevation = elevation,
-            shape = shape,
-            ambientColor = if (highlighted) tokens.glowColor else Color.Black,
-            spotColor = if (highlighted) tokens.primaryAccent else Color.Black
-        )
+        .let { m ->
+            if (elevation > 0.dp) {
+                m.shadow(
+                    elevation = elevation,
+                    shape = shape,
+                    ambientColor = if (highlighted) tokens.glowColor else Color.Black,
+                    spotColor = if (highlighted) tokens.primaryAccent else Color.Black
+                )
+            } else {
+                m
+            }
+        }
         .clip(shape)
         .background(tokens.surfaceGradient, shape)
         .border(BorderStroke(1.dp, borderColor), shape)

@@ -164,24 +164,25 @@ fun HomeScreen(
     var scheduleTarget by remember { mutableStateOf<Pair<AnalyzedMedia, MediaFormatOption>?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    var hasNotifPermission by remember { mutableStateOf(LocaleHelper.hasNotificationPermission(context)) }
-    var notifPromptAttempted by remember { mutableStateOf(false) }
+    var missingPermissions by remember { mutableStateOf(LocaleHelper.allMissingRuntimePermissions(context).toList()) }
+    var permPromptAttempted by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasNotifPermission = LocaleHelper.hasNotificationPermission(context)
+                missingPermissions = LocaleHelper.allMissingRuntimePermissions(context).toList()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val notifPermLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasNotifPermission = granted
-        if (!granted) notifPromptAttempted = true
+    val multiPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        val stillMissing = LocaleHelper.allMissingRuntimePermissions(context).toList()
+        missingPermissions = stillMissing
+        if (stillMissing.isNotEmpty()) permPromptAttempted = true
     }
 
     LaunchedEffect(statusMessage) {
@@ -293,24 +294,31 @@ fun HomeScreen(
             }
         }
 
-        // Notification permission prompt on Android 13+
-        if (!hasNotifPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // Unified runtime permissions prompt (Notifications, Videos, Photos, Music)
+        if (missingPermissions.isNotEmpty()) {
             item {
                 VaCard(highlighted = true) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.perm_notif_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.perm_all_title), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (notifPromptAttempted) stringResource(R.string.perm_denied_hint) else stringResource(R.string.perm_notif_desc),
+                            if (permPromptAttempted) stringResource(R.string.perm_denied_hint) else stringResource(R.string.perm_all_desc),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
-                                Text(stringResource(R.string.perm_allow))
+                            Button(onClick = {
+                                val toAsk = LocaleHelper.allMissingRuntimePermissions(context)
+                                if (toAsk.isNotEmpty()) {
+                                    multiPermLauncher.launch(toAsk)
+                                } else {
+                                    missingPermissions = emptyList()
+                                }
+                            }) {
+                                Text(stringResource(R.string.perm_grant_all_btn))
                             }
-                            if (notifPromptAttempted) {
+                            if (permPromptAttempted) {
                                 OutlinedButton(onClick = { context.openAppDetailsSettings() }) {
                                     Text(stringResource(R.string.perm_open_settings))
                                 }

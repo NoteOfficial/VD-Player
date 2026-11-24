@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
@@ -62,11 +63,13 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -89,10 +92,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.tkofficial.videodownloder.core.LocaleHelper
+import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.database.AlbumEntity
 import com.tkofficial.videodownloder.database.DownloadedMediaEntity
 import com.tkofficial.videodownloder.ui.components.VaCard
@@ -100,6 +108,16 @@ import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.delay
 import java.io.File
+
+private fun mediaModelData(item: DownloadedMediaEntity): Any {
+    val fp = item.filePath
+    return if (fp.isNotBlank() && File(fp).exists()) File(fp) else Uri.parse(item.contentUri)
+}
+
+private fun mediaPlayUri(item: DownloadedMediaEntity): String {
+    val fp = item.filePath
+    return if (fp.isNotBlank() && File(fp).exists()) Uri.fromFile(File(fp)).toString() else item.contentUri
+}
 
 @Composable
 fun GalleryScreen(
@@ -111,6 +129,7 @@ fun GalleryScreen(
     onPlayVideo: (uri: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val tokens = LocalVaTokens.current
     val section by viewModel.section.collectAsStateWithLifecycle()
     val albums by viewModel.albums.collectAsStateWithLifecycle()
@@ -120,6 +139,31 @@ fun GalleryScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
+
+    var hasImgPerm by remember { mutableStateOf(LocaleHelper.hasImagesPermission(context)) }
+    var hasVidPerm by remember { mutableStateOf(LocaleHelper.hasVideoPermission(context)) }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasImgPerm = LocaleHelper.hasImagesPermission(context)
+                hasVidPerm = LocaleHelper.hasVideoPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(hasImgPerm, hasVidPerm) {
+        viewModel.setMediaPermissions(hasImgPerm, hasVidPerm)
+    }
+
+    val mediaPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        hasImgPerm = LocaleHelper.hasImagesPermission(context)
+        hasVidPerm = LocaleHelper.hasVideoPermission(context)
+    }
 
     BackHandler(enabled = selectedIds.isNotEmpty() || selectedAlbumId != null) {
         if (selectedIds.isNotEmpty()) viewModel.clearSelection() else viewModel.selectAlbum(null)
@@ -212,12 +256,38 @@ fun GalleryScreen(
                         }
                     }
                 }
+                IconButton(onClick = viewModel::refreshMedia) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.browser_refresh), tint = tokens.iconTint)
+                }
                 IconButton(onClick = viewModel::toggleViewMode) {
                     Icon(
                         if (isGrid) Icons.Rounded.ViewList else Icons.Rounded.GridView,
                         contentDescription = stringResource(R.string.gallery_toggle_view),
                         tint = tokens.iconTint
                     )
+                }
+            }
+        }
+
+        if (!hasImgPerm || !hasVidPerm) {
+            Spacer(Modifier.height(8.dp))
+            VaCard(highlighted = true, contentPadding = PaddingValues(12.dp)) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.gallery_perm_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.gallery_perm_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { mediaPermLauncher.launch(LocaleHelper.galleryMediaPermissions()) }) {
+                            Text(stringResource(R.string.gallery_scan_btn))
+                        }
+                        OutlinedButton(onClick = { context.openAppDetailsSettings() }) {
+                            Text(stringResource(R.string.perm_open_settings))
+                        }
+                    }
                 }
             }
         }
@@ -403,15 +473,15 @@ fun GalleryScreen(
                                 if (selectedIds.isNotEmpty()) {
                                     viewModel.toggleSelection(item.id)
                                 } else if (item.mediaType == "VIDEO") {
-                                    onPlayVideo(Uri.fromFile(File(item.filePath)).toString(), item.title)
+                                    onPlayVideo(mediaPlayUri(item), item.title)
                                 } else {
                                     viewerItem = item
                                 }
                             }
                     ) {
-                        val thumbModel = remember(item.filePath, item.id) {
+                        val thumbModel = remember(item.filePath, item.contentUri, item.id) {
                             ImageRequest.Builder(context)
-                                .data(File(item.filePath))
+                                .data(mediaModelData(item))
                                 .size(360)
                                 .build()
                         }
@@ -477,7 +547,7 @@ fun GalleryScreen(
                     VaCard(
                         onClick = {
                             if (item.mediaType == "VIDEO") {
-                                onPlayVideo(Uri.fromFile(File(item.filePath)).toString(), item.title)
+                                onPlayVideo(mediaPlayUri(item), item.title)
                             } else {
                                 viewerItem = item
                             }
@@ -486,9 +556,9 @@ fun GalleryScreen(
                         modifier = Modifier.animateItem()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            val listThumb = remember(item.filePath, item.id) {
+                            val listThumb = remember(item.filePath, item.contentUri, item.id) {
                                 ImageRequest.Builder(context)
-                                    .data(File(item.filePath))
+                                    .data(mediaModelData(item))
                                     .size(240)
                                     .build()
                             }
@@ -557,7 +627,7 @@ fun GalleryScreen(
         ) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 AsyncImage(
-                    model = File(current.filePath),
+                    model = mediaModelData(current),
                     contentDescription = current.title,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
@@ -664,7 +734,7 @@ fun GalleryScreen(
                     Text(stringResource(R.string.gallery_details_type, item.mediaType, item.mimeType))
                     Text(stringResource(R.string.gallery_details_size, FormatUtils.formatBytes(item.sizeBytes)))
                     if (item.width > 0 && item.height > 0) Text(stringResource(R.string.gallery_details_res, item.width, item.height))
-                    Text(stringResource(R.string.gallery_details_path, item.filePath), style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.gallery_details_path, item.filePath.ifBlank { item.contentUri }), style = MaterialTheme.typography.labelSmall)
                 }
             },
             confirmButton = {
@@ -726,7 +796,7 @@ private fun FullscreenImageViewerDialog(
                 }
         ) {
             AsyncImage(
-                model = File(item.filePath),
+                model = mediaModelData(item),
                 contentDescription = item.title,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

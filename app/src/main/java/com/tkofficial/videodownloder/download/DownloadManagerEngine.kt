@@ -41,7 +41,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -83,10 +86,21 @@ class DownloadManagerEngine(
 
     init {
         scope.launch {
-            prefsRepo.settingsFlow.collect { settings ->
-                latestSettings = settings
-                pumpQueue()
-            }
+            prefsRepo.settingsFlow
+                .onEach { settings -> latestSettings = settings }
+                .map { s ->
+                    listOf(
+                        s.maxConcurrentDownloads,
+                        s.wifiOnlyDownloads,
+                        s.speedLimitKbps,
+                        s.autoRetryOnFailure,
+                        s.allowCleartextHttp
+                    )
+                }
+                .distinctUntilChanged()
+                .collect {
+                    pumpQueue()
+                }
         }
         registerNetworkRecoveryCallback()
     }

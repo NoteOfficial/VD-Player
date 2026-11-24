@@ -46,7 +46,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _detectedMedia = MutableStateFlow<List<DetectedWebMedia>>(emptyList())
     val detectedMedia: StateFlow<List<DetectedWebMedia>> = _detectedMedia.asStateFlow()
 
-    fun openNewTab(url: String = "https://duckduckgo.com") {
+    init {
+        viewModelScope.launch {
+            val home = prefsRepo.settingsFlow.first().browserHomeUrl.trim()
+            if (home.isNotBlank()) {
+                _tabs.update { current ->
+                    if (current.size == 1 && current[0].url == "https://duckduckgo.com" && current[0].title == "DuckDuckGo") {
+                        listOf(current[0].copy(url = home, title = FormatUtils.extractHost(home).ifBlank { home }))
+                    } else {
+                        current
+                    }
+                }
+            }
+        }
+    }
+
+    fun openNewTab(url: String = settings.value.browserHomeUrl.ifBlank { "https://duckduckgo.com" }) {
         val newTab = BrowserTab(id = UUID.randomUUID().toString(), title = "New Tab", url = url)
         _tabs.value = _tabs.value + newTab
         _activeTabIndex.value = _tabs.value.lastIndex

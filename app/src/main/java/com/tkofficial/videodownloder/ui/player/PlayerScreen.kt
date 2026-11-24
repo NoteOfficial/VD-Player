@@ -146,11 +146,19 @@ fun PlayerScreen(
     var hasAudioPerm by remember {
         mutableStateOf(LocaleHelper.hasAudioPermission(context))
     }
+    var hasVideoPerm by remember {
+        mutableStateOf(LocaleHelper.hasVideoPermission(context))
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.ensureControllerConnected()
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasAudioPerm = LocaleHelper.hasAudioPermission(context)
+                hasVideoPerm = LocaleHelper.hasVideoPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -160,9 +168,15 @@ fun PlayerScreen(
     LaunchedEffect(hasAudioPerm) {
         viewModel.setAudioPermissionGranted(hasAudioPerm)
     }
+    LaunchedEffect(hasVideoPerm) {
+        viewModel.setVideoPermissionGranted(hasVideoPerm)
+    }
 
     val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasAudioPerm = granted
+    }
+    val videoPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        hasVideoPerm = LocaleHelper.hasVideoPermission(context)
     }
 
     val videoPicker = rememberLauncherForActivityResult(
@@ -249,8 +263,11 @@ fun PlayerScreen(
                 VideoLibraryPane(
                     videos = videos,
                     selectedTab = videoTab,
+                    hasVideoPerm = hasVideoPerm,
                     playlists = playlists.filter { it.mediaCategory == "VIDEO" },
                     onSelectTab = viewModel::selectVideoTab,
+                    onRequestVideoPerm = { videoPermLauncher.launch(LocaleHelper.videoReadPermissions()) },
+                    onOpenAppSettings = { context.openAppDetailsSettings() },
                     onRefresh = viewModel::refreshLibraries,
                     onPickVideos = {
                         videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
@@ -767,8 +784,11 @@ fun PlayerScreen(
 private fun VideoLibraryPane(
     videos: List<DeviceMediaItem>,
     selectedTab: VideoSubTab,
+    hasVideoPerm: Boolean,
     playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
     onSelectTab: (VideoSubTab) -> Unit,
+    onRequestVideoPerm: () -> Unit,
+    onOpenAppSettings: () -> Unit,
     onRefresh: () -> Unit,
     onPickVideos: () -> Unit,
     onPickVideoFolder: () -> Unit,
@@ -807,19 +827,49 @@ private fun VideoLibraryPane(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        if (!hasVideoPerm) {
+            VaCard(highlighted = true, contentPadding = PaddingValues(12.dp)) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.player_scan_video_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.player_scan_video_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        Button(onClick = onRequestVideoPerm) { Text(stringResource(R.string.player_scan_btn)) }
+                        OutlinedButton(onClick = onPickVideos) { Text(stringResource(R.string.player_pick_btn)) }
+                        OutlinedButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.perm_open_settings)) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(onClick = onPickVideos, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
+            OutlinedButton(
+                onClick = onPickVideos,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.player_import_videos), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            OutlinedButton(onClick = onPickVideoFolder, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Rounded.FolderOpen, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
+            OutlinedButton(
+                onClick = onPickVideoFolder,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.player_add_folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {

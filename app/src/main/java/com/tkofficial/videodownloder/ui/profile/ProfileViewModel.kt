@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,7 +50,14 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val apiConfigManager = container.apiConfigManager
     private val systemDao = container.database.systemDao()
 
+    private val _isSettingsLoaded = MutableStateFlow(false)
+    val isSettingsLoaded: StateFlow<Boolean> = _isSettingsLoaded.asStateFlow()
+
     val settings: StateFlow<AppSettings> = prefsRepo.settingsFlow
+        .onEach { loaded ->
+            container.currentLanguage = loaded.language
+            _isSettingsLoaded.value = true
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     val pinState = prefsRepo.pinStateFlow
@@ -297,8 +305,9 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun setLanguage(language: AppLanguage) {
         viewModelScope.launch {
             Locale.setDefault(Locale.forLanguageTag(language.tag))
+            container.currentLanguage = language
             prefsRepo.updateSettings { it.copy(language = language) }
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.tag))
+            container.notificationHelper.createChannels()
         }
     }
 

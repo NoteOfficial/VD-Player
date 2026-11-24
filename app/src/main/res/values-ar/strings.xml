@@ -22,7 +22,7 @@
     <string name="perm_allow">سماح</string>
     <string name="perm_open_settings">إعدادات التطبيق</string>
     <string name="perm_section_title">أذونات التطبيق</string>
-    <string name="perm_section_desc">إدارة الأذونات المطلوبة للميزات الاختيارية. تستخدم الصور والفيديوهات منتقي أندرويد دون أذونات تخزين شاملة.</string>
+    <string name="perm_section_desc">إدارة الأذونات المطلوبة للإشعارات ومكتبة الفيديو والصور والموسيقى والكاميرا.</string>
     <string name="perm_notif_name">الإشعارات (Android 13+)</string>
     <string name="perm_audio_name">مكتبة الموسيقى على الجهاز</string>
     <string name="perm_camera_name">الكاميرا (ماسح QR)</string>
@@ -122,7 +122,7 @@
     <string name="notif_clear_all">مسح الكل</string>
 
     <string name="gallery_title">معرض التنزيلات</string>
-    <string name="gallery_subtitle">الوسائط المنزلة عبر VD Player فقط</string>
+    <string name="gallery_subtitle">صور وفيديوهات الجهاز وتنزيلات VD Player</string>
     <string name="gallery_all">الكل</string>
     <string name="gallery_photos">الصور</string>
     <string name="gallery_videos">الفيديو</string>
@@ -130,7 +130,7 @@
     <string name="gallery_favorites">المفضلة</string>
     <string name="gallery_recent">المضافة حديثًا</string>
     <string name="gallery_trash">المحذوفة</string>
-    <string name="gallery_empty">لا توجد وسائط منزلة بعد.</string>
+    <string name="gallery_empty">لا توجد صور أو فيديوهات بعد. امنح إذن الوسائط أو نزّل ملفات.</string>
     <string name="gallery_new_album">ألبوم جديد</string>
     <string name="gallery_slideshow">عرض الشرائح</string>
     <string name="gallery_restore">استعادة</string>
@@ -171,7 +171,7 @@
     <string name="player_artists">الفنانون</string>
     <string name="player_most_played">الأكثر تشغيلًا</string>
     <string name="player_recently_added">المضافة حديثًا</string>
-    <string name="player_import_videos">اختيار فيديوهات</string>
+    <string name="player_import_videos">استيراد فيديو</string>
     <string name="player_import_audio">اختيار صوتيات</string>
     <string name="player_audio_only">صوت فقط (بالخلفية)</string>
     <string name="player_pip">صورة داخل صورة</string>
@@ -641,4 +641,18 @@
     <string name="api_import_failed">فشل استيراد ملف إعدادات API JSON.</string>
     <string name="api_exported_ok">تم تصدير ملف إعدادات API JSON.</string>
     <string name="api_export_failed">فشل تصدير ملف إعدادات API JSON.</string>
+
+    <string name="perm_video_name">مكتبة الفيديو على الجهاز</string>
+    <string name="perm_photos_name">الصور ومعرض الجهاز</string>
+    <string name="perm_all_title">منح الأذونات الأساسية</string>
+    <string name="perm_all_desc">اسمح بالوصول إلى الفيديو والصور والموسيقى والإشعارات لعرض وسائط جهازك وإشعارات التنزيل.</string>
+    <string name="perm_grant_all_btn">منح الكل</string>
+    <string name="gallery_perm_title">الوصول إلى صور وفيديو الجهاز</string>
+    <string name="gallery_perm_desc">امنح إذن الصور والفيديو لاستعراض جميع وسائط جهازك بجانب التنزيلات.</string>
+    <string name="gallery_scan_btn">منح الإذن</string>
+    <string name="player_scan_video_title">فحص مكتبة الفيديو</string>
+    <string name="player_scan_video_desc">امنح إذن الفيديو لعرض كل فيديوهات الجهاز أو اختر ملفات من الأعلى.</string>
+    <string name="set_quick_theme">السمة السريعة والمظهر</string>
+    <string name="set_open_theme_studio">فتح استوديو السمات</string>
+    <string name="gallery_device_item_note">يمكن نسخ وسائط الجهاز إلى ألبوم أو نقل نسخة مشفرة إلى الخزنة.</string>
 </resources>

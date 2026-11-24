@@ -118,7 +118,7 @@ class LocalizationAndPermissionsTest {
     }
 
     @Test
-    fun `manifest declares required permissions and omits broad image or video storage permissions`() {
+    fun `manifest declares all required media notification camera wifi and biometric permissions`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val pkgInfo = context.packageManager.getPackageInfo(
             context.packageName,
@@ -128,17 +128,59 @@ class LocalizationAndPermissionsTest {
 
         assertTrue(requested.contains(Manifest.permission.INTERNET))
         assertTrue(requested.contains(Manifest.permission.ACCESS_NETWORK_STATE))
+        assertTrue(requested.contains(Manifest.permission.ACCESS_WIFI_STATE))
         assertTrue(requested.contains(Manifest.permission.POST_NOTIFICATIONS))
         assertTrue(requested.contains(Manifest.permission.CAMERA))
+        assertTrue(requested.contains(Manifest.permission.READ_MEDIA_VIDEO))
+        assertTrue(requested.contains(Manifest.permission.READ_MEDIA_IMAGES))
         assertTrue(requested.contains(Manifest.permission.READ_MEDIA_AUDIO))
+        assertTrue(requested.contains(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
         assertTrue(requested.contains(Manifest.permission.USE_BIOMETRIC))
         assertTrue(requested.contains(Manifest.permission.FOREGROUND_SERVICE))
         assertTrue(requested.contains(Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC))
         assertTrue(requested.contains(Manifest.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK))
+    }
 
-        // Play policy compliance: zero-permission Android Photo Picker instead of broad media image/video reads
-        assertFalse(requested.contains("android.permission.READ_MEDIA_IMAGES"))
-        assertFalse(requested.contains("android.permission.READ_MEDIA_VIDEO"))
+    @Test
+    fun `locale helper runtime permission arrays include media and notification permissions`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val videoPerms = LocaleHelper.videoReadPermissions().toSet()
+        val imagePerms = LocaleHelper.imagesReadPermissions().toSet()
+        val galleryPerms = LocaleHelper.galleryMediaPermissions().toSet()
+        val allMissing = LocaleHelper.allMissingRuntimePermissions(context).toSet()
+
+        assertTrue(videoPerms.contains(Manifest.permission.READ_MEDIA_VIDEO))
+        assertTrue(imagePerms.contains(Manifest.permission.READ_MEDIA_IMAGES))
+        assertTrue(galleryPerms.contains(Manifest.permission.READ_MEDIA_IMAGES))
+        assertTrue(galleryPerms.contains(Manifest.permission.READ_MEDIA_VIDEO))
+        assertTrue(allMissing.contains(Manifest.permission.POST_NOTIFICATIONS))
+        assertTrue(allMissing.contains(Manifest.permission.READ_MEDIA_VIDEO))
+        assertTrue(allMissing.contains(Manifest.permission.READ_MEDIA_IMAGES))
+        assertTrue(allMissing.contains(Manifest.permission.READ_MEDIA_AUDIO))
+    }
+
+    @Test
+    fun `all new permission and theme resource keys translate cleanly across all 4 locales`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val newKeys = listOf(
+            R.string.perm_video_name,
+            R.string.perm_photos_name,
+            R.string.perm_all_title,
+            R.string.perm_grant_all_btn,
+            R.string.gallery_perm_title,
+            R.string.gallery_scan_btn,
+            R.string.player_scan_video_title,
+            R.string.set_quick_theme,
+            R.string.set_open_theme_studio
+        )
+        for (lang in listOf(AppLanguage.BENGALI, AppLanguage.ARABIC, AppLanguage.HINDI)) {
+            for (resId in newKeys) {
+                val enVal = LocaleHelper.getLocalizedString(context, AppLanguage.ENGLISH, resId)
+                val locVal = LocaleHelper.getLocalizedString(context, lang, resId)
+                assertTrue("Expected non-blank translation for $resId in ${lang.tag}", locVal.isNotBlank())
+                assertNotEquals("Expected localized text for $resId in ${lang.tag}", enVal, locVal)
+            }
+        }
     }
 
     @Test

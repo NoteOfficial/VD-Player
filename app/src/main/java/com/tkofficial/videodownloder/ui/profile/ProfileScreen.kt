@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.tkofficial.videodownloder.core.DeveloperIdentity
+import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.ui.components.VaCard
 import com.tkofficial.videodownloder.ui.components.VaSectionTitle
 import com.tkofficial.videodownloder.ui.components.VaStatusChip
@@ -169,7 +170,7 @@ fun ProfileScreen(
                             if (!opened) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.msg_no_telegram_app),
+                                    LocaleHelper.getLocalizedString(context, settings.language, R.string.msg_no_telegram_app),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -186,7 +187,12 @@ fun ProfileScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            val subject = context.getString(R.string.email_feedback_subject, DeveloperIdentity.APP_NAME)
+                            val subject = LocaleHelper.getLocalizedString(
+                                context,
+                                settings.language,
+                                R.string.email_feedback_subject,
+                                DeveloperIdentity.APP_NAME
+                            )
                             val mail = Intent(Intent.ACTION_SENDTO).apply {
                                 data = Uri.parse("mailto:${DeveloperIdentity.DEVELOPER_EMAIL}")
                                 putExtra(Intent.EXTRA_SUBJECT, subject)
@@ -195,7 +201,7 @@ fun ProfileScreen(
                             if (!opened) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.msg_no_email_app),
+                                    LocaleHelper.getLocalizedString(context, settings.language, R.string.msg_no_email_app),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }

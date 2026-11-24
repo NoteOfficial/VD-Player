@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -47,6 +49,7 @@ import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +66,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -86,6 +91,7 @@ import com.tkofficial.videodownloder.core.openAppDetailsSettings
 import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.models.AspectRatioMode
 import com.tkofficial.videodownloder.models.DecoderMode
+import com.tkofficial.videodownloder.models.ThemePreset
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import com.tkofficial.videodownloder.network.ApiConfigManager
@@ -121,6 +127,7 @@ fun SettingsCenterScreen(
     initialSection: String,
     viewModel: ProfileViewModel,
     snackbarHostState: SnackbarHostState,
+    onOpenThemeStudio: () -> Unit = {},
     onOpenStorageAnalyzer: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenLegal: () -> Unit,
@@ -145,29 +152,46 @@ fun SettingsCenterScreen(
     }
 
     var hasNotifPerm by remember { mutableStateOf(LocaleHelper.hasNotificationPermission(context)) }
+    var hasVideoPerm by remember { mutableStateOf(LocaleHelper.hasVideoPermission(context)) }
+    var hasImagesPerm by remember { mutableStateOf(LocaleHelper.hasImagesPermission(context)) }
     var hasAudioPerm by remember { mutableStateOf(LocaleHelper.hasAudioPermission(context)) }
     var hasCameraPerm by remember { mutableStateOf(LocaleHelper.hasCameraPermission(context)) }
+
+    fun syncPermissionFlags() {
+        hasNotifPerm = LocaleHelper.hasNotificationPermission(context)
+        hasVideoPerm = LocaleHelper.hasVideoPermission(context)
+        hasImagesPerm = LocaleHelper.hasImagesPermission(context)
+        hasAudioPerm = LocaleHelper.hasAudioPermission(context)
+        hasCameraPerm = LocaleHelper.hasCameraPermission(context)
+    }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasNotifPerm = LocaleHelper.hasNotificationPermission(context)
-                hasAudioPerm = LocaleHelper.hasAudioPermission(context)
-                hasCameraPerm = LocaleHelper.hasCameraPermission(context)
+                syncPermissionFlags()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val notifPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasNotifPerm = granted
+    val notifPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        syncPermissionFlags()
     }
-    val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasAudioPerm = granted
+    val videoPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        syncPermissionFlags()
     }
-    val cameraPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCameraPerm = granted
+    val imagesPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        syncPermissionFlags()
+    }
+    val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        syncPermissionFlags()
+    }
+    val cameraPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        syncPermissionFlags()
+    }
+    val grantAllLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        syncPermissionFlags()
     }
 
     BackHandler(enabled = activeSection != null && initialSection == "hub") {
@@ -246,10 +270,13 @@ fun SettingsCenterScreen(
                             Button(onClick = { viewModel.updateSettings { it.copy(userDisplayName = name.ifBlank { "Media Explorer" }) } }) {
                                 Text(stringResource(R.string.set_update_greeting))
                             }
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(12.dp))
                             Text(stringResource(R.string.set_start_tab), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(6.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 val tabLabels = listOf(
                                     "home" to stringResource(R.string.nav_home),
                                     "gallery" to stringResource(R.string.nav_gallery),
@@ -264,29 +291,80 @@ fun SettingsCenterScreen(
                                     )
                                 }
                             }
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider(color = tokens.borderSubtle)
+                            Spacer(Modifier.height(12.dp))
+                            Text(stringResource(R.string.set_quick_theme), style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ThemePreset.entries.forEach { preset ->
+                                    FilterChip(
+                                        selected = !settings.themeConfig.followSystem && settings.themeConfig.preset == preset.name,
+                                        onClick = {
+                                            viewModel.updateSettings {
+                                                it.copy(
+                                                    themeConfig = it.themeConfig.copy(
+                                                        preset = preset.name,
+                                                        followSystem = false
+                                                    )
+                                                )
+                                            }
+                                        },
+                                        label = { Text(stringResource(preset.labelRes), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            SettingSwitch(stringResource(R.string.theme_follow_system), settings.themeConfig.followSystem) { follow ->
+                                viewModel.updateSettings {
+                                    it.copy(themeConfig = it.themeConfig.copy(followSystem = follow))
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = onOpenThemeStudio,
+                                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                            ) {
+                                Text(stringResource(R.string.set_open_theme_studio))
+                            }
                         }
 
                         SettingsSection.DOWNLOADS -> VaCard {
-                            Text(stringResource(R.string.set_max_concurrent, settings.maxConcurrentDownloads), style = MaterialTheme.typography.titleMedium)
+                            var maxConcurrentDraft by remember(settings.maxConcurrentDownloads) {
+                                mutableIntStateOf(settings.maxConcurrentDownloads)
+                            }
+                            var speedLimitDraft by remember(settings.speedLimitKbps) {
+                                mutableIntStateOf(settings.speedLimitKbps)
+                            }
+                            Text(stringResource(R.string.set_max_concurrent, maxConcurrentDraft), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.maxConcurrentDownloads.toFloat(),
+                                value = maxConcurrentDraft.toFloat(),
                                 valueRange = 1f..5f,
                                 steps = 3,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(maxConcurrentDownloads = v.toInt()) } }
+                                onValueChange = { v -> maxConcurrentDraft = v.toInt() },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(maxConcurrentDownloads = maxConcurrentDraft) }
+                                }
                             )
                             SettingSwitch(stringResource(R.string.set_wifi_only), settings.wifiOnlyDownloads) { v ->
                                 viewModel.updateSettings { it.copy(wifiOnlyDownloads = v) }
                             }
-                            val limitLabel = if (settings.speedLimitKbps == 0) {
+                            val limitLabel = if (speedLimitDraft == 0) {
                                 stringResource(R.string.set_unlimited)
                             } else {
-                                stringResource(R.string.set_speed_kbps, settings.speedLimitKbps)
+                                stringResource(R.string.set_speed_kbps, speedLimitDraft)
                             }
                             Text(stringResource(R.string.set_speed_limit, limitLabel), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.speedLimitKbps.toFloat(),
+                                value = speedLimitDraft.toFloat(),
                                 valueRange = 0f..10240f,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(speedLimitKbps = (v / 128).toInt() * 128) } }
+                                onValueChange = { v -> speedLimitDraft = (v / 128).toInt() * 128 },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(speedLimitKbps = speedLimitDraft) }
+                                }
                             )
                             SettingSwitch(stringResource(R.string.set_auto_retry), settings.autoRetryOnFailure) { v ->
                                 viewModel.updateSettings { it.copy(autoRetryOnFailure = v) }
@@ -318,36 +396,57 @@ fun SettingsCenterScreen(
                         }
 
                         SettingsSection.GALLERY -> VaCard {
-                            Text(stringResource(R.string.set_grid_cols, settings.galleryGridColumns), style = MaterialTheme.typography.titleMedium)
+                            var gridColsDraft by remember(settings.galleryGridColumns) {
+                                mutableIntStateOf(settings.galleryGridColumns)
+                            }
+                            var slideshowSecDraft by remember(settings.gallerySlideshowSeconds) {
+                                mutableIntStateOf(settings.gallerySlideshowSeconds)
+                            }
+                            Text(stringResource(R.string.set_grid_cols, gridColsDraft), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.galleryGridColumns.toFloat(),
+                                value = gridColsDraft.toFloat(),
                                 valueRange = 2f..5f,
                                 steps = 2,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(galleryGridColumns = v.toInt()) } }
+                                onValueChange = { v -> gridColsDraft = v.toInt() },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(galleryGridColumns = gridColsDraft) }
+                                }
                             )
                             SettingSwitch(stringResource(R.string.set_show_filenames), settings.galleryShowFileNames) { v ->
                                 viewModel.updateSettings { it.copy(galleryShowFileNames = v) }
                             }
-                            Text(stringResource(R.string.set_slideshow_interval, settings.gallerySlideshowSeconds), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.set_slideshow_interval, slideshowSecDraft), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.gallerySlideshowSeconds.toFloat(),
+                                value = slideshowSecDraft.toFloat(),
                                 valueRange = 2f..15f,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(gallerySlideshowSeconds = v.toInt()) } }
+                                onValueChange = { v -> slideshowSecDraft = v.toInt() },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(gallerySlideshowSeconds = slideshowSecDraft) }
+                                }
                             )
                         }
 
                         SettingsSection.VIDEO_PLAYER -> VaCard {
+                            var defaultSpeedDraft by remember(settings.videoDefaultSpeed) {
+                                mutableFloatStateOf(settings.videoDefaultSpeed)
+                            }
+                            var subtitleFontDraft by remember(settings.videoSubtitleFontSp) {
+                                mutableFloatStateOf(settings.videoSubtitleFontSp)
+                            }
                             Text(
                                 stringResource(
                                     R.string.set_default_speed,
-                                    String.format(java.util.Locale.US, "%.2f", settings.videoDefaultSpeed)
+                                    String.format(java.util.Locale.US, "%.2f", defaultSpeedDraft)
                                 ),
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Slider(
-                                value = settings.videoDefaultSpeed,
+                                value = defaultSpeedDraft,
                                 valueRange = 0.5f..2.0f,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(videoDefaultSpeed = v) } }
+                                onValueChange = { v -> defaultSpeedDraft = v },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(videoDefaultSpeed = defaultSpeedDraft) }
+                                }
                             )
                             Text(stringResource(R.string.set_default_aspect), style = MaterialTheme.typography.titleMedium)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -373,11 +472,14 @@ fun SettingsCenterScreen(
                             SettingSwitch(stringResource(R.string.set_auto_next), settings.videoAutoNext) { v ->
                                 viewModel.updateSettings { it.copy(videoAutoNext = v) }
                             }
-                            Text(stringResource(R.string.set_subtitle_size, settings.videoSubtitleFontSp.toInt()), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.set_subtitle_size, subtitleFontDraft.toInt()), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.videoSubtitleFontSp,
+                                value = subtitleFontDraft,
                                 valueRange = 12f..32f,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(videoSubtitleFontSp = v) } }
+                                onValueChange = { v -> subtitleFontDraft = v },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(videoSubtitleFontSp = subtitleFontDraft) }
+                                }
                             )
                         }
 
@@ -415,14 +517,20 @@ fun SettingsCenterScreen(
                         }
 
                         SettingsSection.NETWORK -> VaCard {
+                            var timeoutDraft by remember(settings.requestTimeoutSeconds) {
+                                mutableIntStateOf(settings.requestTimeoutSeconds)
+                            }
                             SettingSwitch(stringResource(R.string.set_allow_http), settings.allowCleartextHttp) { v ->
                                 viewModel.updateSettings { it.copy(allowCleartextHttp = v) }
                             }
-                            Text(stringResource(R.string.set_request_timeout, settings.requestTimeoutSeconds), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.set_request_timeout, timeoutDraft), style = MaterialTheme.typography.titleMedium)
                             Slider(
-                                value = settings.requestTimeoutSeconds.toFloat(),
+                                value = timeoutDraft.toFloat(),
                                 valueRange = 10f..120f,
-                                onValueChange = { v -> viewModel.updateSettings { it.copy(requestTimeoutSeconds = v.toInt()) } }
+                                onValueChange = { v -> timeoutDraft = v.toInt() },
+                                onValueChangeFinished = {
+                                    viewModel.updateSettings { it.copy(requestTimeoutSeconds = timeoutDraft) }
+                                }
                             )
                         }
 
@@ -623,14 +731,20 @@ fun SettingsCenterScreen(
 
                         SettingsSection.PRIVACY -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             VaCard {
+                                var autoLockDraft by remember(settings.autoLockSeconds) {
+                                    mutableIntStateOf(settings.autoLockSeconds)
+                                }
                                 SettingSwitch(stringResource(R.string.set_hide_recents), settings.hideThumbnailsInRecents) { v ->
                                     viewModel.updateSettings { it.copy(hideThumbnailsInRecents = v) }
                                 }
-                                Text(stringResource(R.string.set_autolock_timeout, settings.autoLockSeconds), style = MaterialTheme.typography.titleMedium)
+                                Text(stringResource(R.string.set_autolock_timeout, autoLockDraft), style = MaterialTheme.typography.titleMedium)
                                 Slider(
-                                    value = settings.autoLockSeconds.toFloat(),
+                                    value = autoLockDraft.toFloat(),
                                     valueRange = 15f..300f,
-                                    onValueChange = { v -> viewModel.updateSettings { it.copy(autoLockSeconds = v.toInt()) } }
+                                    onValueChange = { v -> autoLockDraft = v.toInt() },
+                                    onValueChangeFinished = {
+                                        viewModel.updateSettings { it.copy(autoLockSeconds = autoLockDraft) }
+                                    }
                                 )
                             }
 
@@ -642,6 +756,16 @@ fun SettingsCenterScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                val missingAll = LocaleHelper.allMissingRuntimePermissions(context)
+                                if (missingAll.isNotEmpty()) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Button(
+                                        onClick = { grantAllLauncher.launch(missingAll) },
+                                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                                    ) {
+                                        Text(stringResource(R.string.perm_grant_all_btn))
+                                    }
+                                }
                                 Spacer(Modifier.height(12.dp))
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -652,6 +776,18 @@ fun SettingsCenterScreen(
                                         onOpenSettings = { context.openAppDetailsSettings() }
                                     )
                                 }
+                                PermissionStatusRow(
+                                    name = stringResource(R.string.perm_video_name),
+                                    granted = hasVideoPerm,
+                                    onRequest = { videoPermLauncher.launch(LocaleHelper.videoReadPermissions()) },
+                                    onOpenSettings = { context.openAppDetailsSettings() }
+                                )
+                                PermissionStatusRow(
+                                    name = stringResource(R.string.perm_photos_name),
+                                    granted = hasImagesPerm,
+                                    onRequest = { imagesPermLauncher.launch(LocaleHelper.imagesReadPermissions()) },
+                                    onOpenSettings = { context.openAppDetailsSettings() }
+                                )
                                 PermissionStatusRow(
                                     name = stringResource(R.string.perm_audio_name),
                                     granted = hasAudioPerm,
@@ -664,22 +800,6 @@ fun SettingsCenterScreen(
                                     onRequest = { cameraPermLauncher.launch(Manifest.permission.CAMERA) },
                                     onOpenSettings = { context.openAppDetailsSettings() }
                                 )
-                                Spacer(Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.perm_media_picker_name),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                    )
-                                    VaStatusChip(
-                                        label = stringResource(R.string.perm_status_zero_perm),
-                                        color = tokens.success
-                                    )
-                                }
                             }
                         }
 
@@ -757,7 +877,11 @@ fun SettingsCenterScreen(
                                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DeveloperIdentity.TELEGRAM_URL)))
                                         }.isSuccess
                                         if (!opened) {
-                                            Toast.makeText(context, context.getString(R.string.msg_no_telegram_app), Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(
+                                                context,
+                                                LocaleHelper.getLocalizedString(context, settings.language, R.string.msg_no_telegram_app),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
                                         }
                                     },
                                     modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
@@ -768,14 +892,23 @@ fun SettingsCenterScreen(
                                 }
                                 OutlinedButton(
                                     onClick = {
-                                        val subject = context.getString(R.string.email_feedback_subject, DeveloperIdentity.APP_NAME)
+                                        val subject = LocaleHelper.getLocalizedString(
+                                            context,
+                                            settings.language,
+                                            R.string.email_feedback_subject,
+                                            DeveloperIdentity.APP_NAME
+                                        )
                                         val mail = Intent(Intent.ACTION_SENDTO).apply {
                                             data = Uri.parse("mailto:${DeveloperIdentity.DEVELOPER_EMAIL}")
                                             putExtra(Intent.EXTRA_SUBJECT, subject)
                                         }
                                         val opened = runCatching { context.startActivity(mail) }.isSuccess
                                         if (!opened) {
-                                            Toast.makeText(context, context.getString(R.string.msg_no_email_app), Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(
+                                                context,
+                                                LocaleHelper.getLocalizedString(context, settings.language, R.string.msg_no_email_app),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
                                         }
                                     },
                                     modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)

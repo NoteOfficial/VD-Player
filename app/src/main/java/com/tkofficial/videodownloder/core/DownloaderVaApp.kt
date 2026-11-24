@@ -12,6 +12,7 @@ import com.tkofficial.videodownloder.data.PreferencesRepository
 import com.tkofficial.videodownloder.database.AppDatabase
 import com.tkofficial.videodownloder.download.DownloadManagerEngine
 import com.tkofficial.videodownloder.media.MediaStudioEngine
+import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.network.ApiConfigManager
 import com.tkofficial.videodownloder.network.LinkAnalyzer
 import com.tkofficial.videodownloder.notifications.NotificationHelper
@@ -23,7 +24,9 @@ import com.tkofficial.videodownloder.security.SecurityManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -32,7 +35,9 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.getInstance(context)
     val preferencesRepository: PreferencesRepository = PreferencesRepository(context)
     val securityManager: SecurityManager = SecurityManager(context)
-    val notificationHelper: NotificationHelper = NotificationHelper(context)
+    @Volatile
+    var currentLanguage: AppLanguage = AppLanguage.ENGLISH
+    val notificationHelper: NotificationHelper = NotificationHelper(context) { currentLanguage }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -96,6 +101,16 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
         super.onCreate()
         container = AppContainer(this)
         container.notificationHelper.createChannels()
+
+        appScope.launch {
+            container.preferencesRepository.settingsFlow
+                .map { it.language }
+                .distinctUntilChanged()
+                .collect { lang ->
+                    container.currentLanguage = lang
+                    container.notificationHelper.createChannels()
+                }
+        }
 
         appScope.launch {
             container.database.downloadDao().pauseInterruptedOnBoot()

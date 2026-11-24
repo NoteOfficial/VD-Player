@@ -22,7 +22,7 @@
     <string name="perm_allow">অনুমতি দিন</string>
     <string name="perm_open_settings">অ্যাপ সেটিংস</string>
     <string name="perm_section_title">অ্যাপ পার্মিশন</string>
-    <string name="perm_section_desc">ঐচ্ছিক ফিচারের জন্য প্রয়োজনীয় পার্মিশন পরিচালনা করুন। ছবি ও ভিডিওর জন্য অ্যান্ড্রয়েডের নিরাপদ Photo Picker ব্যবহার করা হয়।</string>
+    <string name="perm_section_desc">নোটিফিকেশন, ডিভাইস ভিডিও, ছবি, মিউজিক লাইব্রেরি এবং ক্যামেরার জন্য প্রয়োজনীয় পার্মিশন পরিচালনা করুন।</string>
     <string name="perm_notif_name">নোটিফিকেশন (Android 13+)</string>
     <string name="perm_audio_name">ডিভাইস মিউজিক লাইব্রেরি</string>
     <string name="perm_camera_name">ক্যামেরা (QR স্ক্যানার)</string>
@@ -122,7 +122,7 @@
     <string name="notif_clear_all">সব মুছুন</string>
 
     <string name="gallery_title">ডাউনলোড করা গ্যালারি</string>
-    <string name="gallery_subtitle">শুধুমাত্র VD Player দিয়ে ডাউনলোড করা মিডিয়া</string>
+    <string name="gallery_subtitle">ডিভাইসের ছবি, ভিডিও ও VD Player ডাউনলোড</string>
     <string name="gallery_all">সব</string>
     <string name="gallery_photos">ছবি</string>
     <string name="gallery_videos">ভিডিও</string>
@@ -130,7 +130,7 @@
     <string name="gallery_favorites">প্রিয়</string>
     <string name="gallery_recent">সাম্প্রতিক</string>
     <string name="gallery_trash">ট্র্যাশ</string>
-    <string name="gallery_empty">এখনো কোনো ডাউনলোড করা মিডিয়া নেই।</string>
+    <string name="gallery_empty">এখনো কোনো ছবি বা ভিডিও পাওয়া যায়নি। মিডিয়া পার্মিশন দিন অথবা ডাউনলোড করুন।</string>
     <string name="gallery_new_album">নতুন অ্যালবাম</string>
     <string name="gallery_slideshow">স্লাইডশো</string>
     <string name="gallery_restore">পুনরুদ্ধার</string>
@@ -171,7 +171,7 @@
     <string name="player_artists">শিল্পী</string>
     <string name="player_most_played">সর্বাধিক শোনা</string>
     <string name="player_recently_added">সম্প্রতি যোগ করা</string>
-    <string name="player_import_videos">ভিডিও নির্বাচন</string>
+    <string name="player_import_videos">ভিডিও আনুন</string>
     <string name="player_import_audio">অডিও নির্বাচন</string>
     <string name="player_audio_only">শুধু অডিও (ব্যাকগ্রাউন্ড)</string>
     <string name="player_pip">পিকচার-ইন-পিকচার</string>
@@ -641,4 +641,18 @@
     <string name="api_import_failed">API কনফিগারেশন JSON ইমপোর্ট ব্যর্থ হয়েছে।</string>
     <string name="api_exported_ok">API JSON কনফিগারেশন এক্সপোর্ট হয়েছে।</string>
     <string name="api_export_failed">API কনফিগারেশন JSON এক্সপোর্ট ব্যর্থ হয়েছে।</string>
+
+    <string name="perm_video_name">ডিভাইস ভিডিও লাইব্রেরি</string>
+    <string name="perm_photos_name">ডিভাইস ছবি ও গ্যালারি</string>
+    <string name="perm_all_title">প্রয়োজনীয় পার্মিশন দিন</string>
+    <string name="perm_all_desc">ডিভাইসের সব ভিডিও, ছবি, মিউজিক এবং ডাউনলোড নোটিফিকেশন সঠিকভাবে দেখাতে পার্মিশন দিন।</string>
+    <string name="perm_grant_all_btn">সব অনুমতি দিন</string>
+    <string name="gallery_perm_title">ডিভাইসের ছবি ও ভিডিও দেখুন</string>
+    <string name="gallery_perm_desc">ডাউনলোডের পাশাপাশি আপনার ডিভাইসের সব ছবি ও ভিডিও দেখতে অনুমতি দিন।</string>
+    <string name="gallery_scan_btn">অনুমতি দিন</string>
+    <string name="player_scan_video_title">ডিভাইস ভিডিও লাইব্রেরি স্ক্যান</string>
+    <string name="player_scan_video_desc">ডিভাইসের সব ভিডিও তালিকাভুক্ত করতে ভিডিও পার্মিশন দিন অথবা উপর থেকে ফাইল বাছাই করুন।</string>
+    <string name="set_quick_theme">দ্রুত থিম ও ডিজাইন</string>
+    <string name="set_open_theme_studio">থিম স্টুডিও খুলুন</string>
+    <string name="gallery_device_item_note">ডিভাইস মিডিয়া অ্যালবামে কপি বা ভল্টে নিরাপদ কপি হিসেবে যোগ করা যাবে।</string>
 </resources>

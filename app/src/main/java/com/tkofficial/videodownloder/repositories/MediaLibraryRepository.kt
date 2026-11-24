@@ -24,10 +24,12 @@ class MediaLibraryRepository(
     private val playerDao: PlayerLibraryDao
 ) {
     suspend fun loadRawVideos(
+        hasVideoPermission: Boolean,
         persistedFolderUris: Set<String>,
         pickedVideoUris: Set<String>
     ): List<DeviceMediaItem> = withContext(Dispatchers.IO) {
         val result = linkedMapOf<String, DeviceMediaItem>()
+        val seenPaths = hashSetOf<String>()
 
         // 1. Videos downloaded by VD Player (zero permission needed)
         val downloaded = galleryDao.getAllActiveOnce().filter { it.mediaType == "VIDEO" }
@@ -35,6 +37,7 @@ class MediaLibraryRepository(
             val file = File(entity.filePath)
             if (file.exists()) {
                 val uriStr = Uri.fromFile(file).toString()
+                seenPaths.add(file.absolutePath)
                 result[uriStr] = DeviceMediaItem(
                     id = "dl_${entity.id}",
                     uriString = uriStr,
@@ -51,6 +54,81 @@ class MediaLibraryRepository(
                     dateAddedSec = entity.addedAt / 1000L,
                     isFavorite = entity.isFavorite
                 )
+            }
+        }
+
+        // 2. Device Videos via MediaStore (when runtime video permission granted)
+        if (hasVideoPermission) {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
+            val projection = arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.TITLE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+                MediaStore.Video.Media.DURATION,
+                MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.WIDTH,
+                MediaStore.Video.Media.HEIGHT,
+                MediaStore.Video.Media.MIME_TYPE,
+                MediaStore.Video.Media.DATE_ADDED,
+                MediaStore.Video.Media.DATA
+            )
+            runCatching {
+                context.contentResolver.query(
+                    collection,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleCol = cursor.getColumnIndex(MediaStore.Video.Media.TITLE)
+                    val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
+                    val bucketCol = cursor.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                    val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
+                    val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
+                    val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                    val mimeCol = cursor.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
+                    val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+
+                    while (cursor.moveToNext()) {
+                        val msId = cursor.getLong(idCol)
+                        val dataPath = if (dataCol >= 0) cursor.getString(dataCol).orEmpty() else ""
+                        if (dataPath.isNotBlank() && seenPaths.contains(dataPath)) continue
+
+                        val contentUri = ContentUris.withAppendedId(collection, msId)
+                        val uriStr = contentUri.toString()
+                        val displayName = if (nameCol >= 0) cursor.getString(nameCol).orEmpty() else ""
+                        val title = (if (titleCol >= 0) cursor.getString(titleCol) else null)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: displayName.substringBeforeLast('.').ifBlank { "Video $msId" }
+                        if (dataPath.isNotBlank()) seenPaths.add(dataPath)
+                        result.putIfAbsent(
+                            uriStr,
+                            DeviceMediaItem(
+                                id = "ms_vid_$msId",
+                                uriString = uriStr,
+                                title = title,
+                                fileName = displayName.ifBlank { "$title.mp4" },
+                                folderName = if (bucketCol >= 0) cursor.getString(bucketCol)?.ifBlank { "Device" } ?: "Device" else "Device",
+                                durationMs = if (durCol >= 0) cursor.getLong(durCol).coerceAtLeast(0L) else 0L,
+                                sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L,
+                                width = if (widthCol >= 0) cursor.getInt(widthCol).coerceAtLeast(0) else 0,
+                                height = if (heightCol >= 0) cursor.getInt(heightCol).coerceAtLeast(0) else 0,
+                                mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "video/mp4" else "video/mp4",
+                                isVideo = true,
+                                isDownloadedByApp = false,
+                                dateAddedSec = if (dateCol >= 0) cursor.getLong(dateCol).coerceAtLeast(0L) else 0L
+                            )
+                        )
+                    }
+                }
             }
         }
 
@@ -124,13 +202,164 @@ class MediaLibraryRepository(
     }
 
     suspend fun loadVideoLibrary(
+        hasVideoPermission: Boolean,
         persistedFolderUris: Set<String>,
         pickedVideoUris: Set<String>,
         historyMap: Map<String, PlaybackHistoryEntity>,
         favoriteKeys: Set<String>
     ): List<DeviceMediaItem> {
-        val raw = loadRawVideos(persistedFolderUris, pickedVideoUris)
+        val raw = loadRawVideos(hasVideoPermission, persistedFolderUris, pickedVideoUris)
         return applyVideoMetadata(raw, historyMap, favoriteKeys)
+    }
+
+    suspend fun loadDeviceGalleryMedia(
+        hasImagesPermission: Boolean,
+        hasVideoPermission: Boolean,
+        excludeFilePaths: Set<String>,
+        excludeContentUris: Set<String>,
+        favoriteKeys: Set<String>
+    ): List<DownloadedMediaEntity> = withContext(Dispatchers.IO) {
+        if (!hasImagesPermission && !hasVideoPermission) return@withContext emptyList()
+        val items = mutableListOf<DownloadedMediaEntity>()
+
+        if (hasImagesPermission) {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.TITLE,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.SIZE,
+                MediaStore.Images.Media.WIDTH,
+                MediaStore.Images.Media.HEIGHT,
+                MediaStore.Images.Media.MIME_TYPE,
+                MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.DATA
+            )
+            runCatching {
+                context.contentResolver.query(
+                    collection,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val titleCol = cursor.getColumnIndex(MediaStore.Images.Media.TITLE)
+                    val nameCol = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.Images.Media.SIZE)
+                    val widthCol = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                    val heightCol = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+                    val mimeCol = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
+                    val dateCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+
+                    while (cursor.moveToNext()) {
+                        val msId = cursor.getLong(idCol)
+                        val uriStr = ContentUris.withAppendedId(collection, msId).toString()
+                        val dataPath = if (dataCol >= 0) cursor.getString(dataCol).orEmpty() else ""
+                        if (excludeContentUris.contains(uriStr) || (dataPath.isNotBlank() && excludeFilePaths.contains(dataPath))) {
+                            continue
+                        }
+                        val displayName = if (nameCol >= 0) cursor.getString(nameCol).orEmpty() else ""
+                        val title = (if (titleCol >= 0) cursor.getString(titleCol) else null)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: displayName.substringBeforeLast('.').ifBlank { "Image $msId" }
+                        items.add(
+                            DownloadedMediaEntity(
+                                id = -msId.coerceAtLeast(1L),
+                                title = title,
+                                fileName = displayName.ifBlank { "$title.jpg" },
+                                filePath = dataPath,
+                                contentUri = uriStr,
+                                mediaType = "PHOTO",
+                                mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "image/*" else "image/*",
+                                sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L,
+                                width = if (widthCol >= 0) cursor.getInt(widthCol).coerceAtLeast(0) else 0,
+                                height = if (heightCol >= 0) cursor.getInt(heightCol).coerceAtLeast(0) else 0,
+                                isFavorite = favoriteKeys.contains(uriStr),
+                                addedAt = (if (dateCol >= 0) cursor.getLong(dateCol) else 0L) * 1000L
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if (hasVideoPermission) {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
+            val projection = arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.TITLE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.DURATION,
+                MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.WIDTH,
+                MediaStore.Video.Media.HEIGHT,
+                MediaStore.Video.Media.MIME_TYPE,
+                MediaStore.Video.Media.DATE_ADDED,
+                MediaStore.Video.Media.DATA
+            )
+            runCatching {
+                context.contentResolver.query(
+                    collection,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleCol = cursor.getColumnIndex(MediaStore.Video.Media.TITLE)
+                    val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
+                    val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
+                    val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                    val mimeCol = cursor.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
+                    val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+
+                    while (cursor.moveToNext()) {
+                        val msId = cursor.getLong(idCol)
+                        val uriStr = ContentUris.withAppendedId(collection, msId).toString()
+                        val dataPath = if (dataCol >= 0) cursor.getString(dataCol).orEmpty() else ""
+                        if (excludeContentUris.contains(uriStr) || (dataPath.isNotBlank() && excludeFilePaths.contains(dataPath))) {
+                            continue
+                        }
+                        val displayName = if (nameCol >= 0) cursor.getString(nameCol).orEmpty() else ""
+                        val title = (if (titleCol >= 0) cursor.getString(titleCol) else null)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: displayName.substringBeforeLast('.').ifBlank { "Video $msId" }
+                        items.add(
+                            DownloadedMediaEntity(
+                                id = -1_000_000_000L - msId.coerceAtLeast(1L),
+                                title = title,
+                                fileName = displayName.ifBlank { "$title.mp4" },
+                                filePath = dataPath,
+                                contentUri = uriStr,
+                                mediaType = "VIDEO",
+                                mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "video/mp4" else "video/mp4",
+                                sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L,
+                                durationMs = if (durCol >= 0) cursor.getLong(durCol).coerceAtLeast(0L) else 0L,
+                                width = if (widthCol >= 0) cursor.getInt(widthCol).coerceAtLeast(0) else 0,
+                                height = if (heightCol >= 0) cursor.getInt(heightCol).coerceAtLeast(0) else 0,
+                                isFavorite = favoriteKeys.contains(uriStr),
+                                addedAt = (if (dateCol >= 0) cursor.getLong(dateCol) else 0L) * 1000L
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        items.sortedByDescending { it.addedAt }
     }
 
     suspend fun loadRawAudio(

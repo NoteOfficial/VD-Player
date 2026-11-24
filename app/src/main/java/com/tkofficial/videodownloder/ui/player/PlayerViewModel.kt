@@ -96,6 +96,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _pickedVideoUris = MutableStateFlow<Set<String>>(emptySet())
     private val _pickedAudioUris = MutableStateFlow<Set<String>>(emptySet())
+    private val _hasVideoPermission = MutableStateFlow(false)
     private val _hasAudioPermission = MutableStateFlow(false)
     private val _refreshTrigger = MutableStateFlow(0L)
 
@@ -106,21 +107,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val musicQueue: StateFlow<List<DeviceMediaItem>> = _musicQueue.asStateFlow()
 
     private var controller: MediaController? = null
+    private var isConnectingController = false
+    private val pendingControllerActions = mutableListOf<(MediaController) -> Unit>()
     private var controllerListener: Player.Listener? = null
     private var progressTickerJob: Job? = null
     private var sleepTimerJob: Job? = null
 
     init {
-        connectMediaController()
         viewModelScope.launch {
             combine(
+                _hasVideoPermission,
                 prefsRepo.settingsFlow.map { it.persistedVideoFolderUris }.distinctUntilChanged(),
                 _pickedVideoUris,
                 _refreshTrigger
-            ) { folders, pickedVid, _ ->
-                folders to pickedVid
-            }.collect { (folders, pickedVid) ->
+            ) { vidPerm, folders, pickedVid, _ ->
+                Triple(vidPerm, folders, pickedVid)
+            }.collect { (vidPerm, folders, pickedVid) ->
                 _rawVideos.value = mediaRepo.loadRawVideos(
+                    hasVideoPermission = vidPerm,
                     persistedFolderUris = folders,
                     pickedVideoUris = pickedVid
                 )
@@ -181,10 +185,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _refreshTrigger.value = System.currentTimeMillis()
     }
 
-    private fun connectMediaController() {
+    fun ensureControllerConnected() {
+        if (controller != null || isConnectingController) return
+        isConnectingController = true
         val sessionToken = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, sessionToken).buildAsync()
         future.addListener({
+            isConnectingController = false
             runCatching {
                 val ctrl = future.get()
                 controller = ctrl
@@ -213,8 +220,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 ctrl.addListener(listener)
                 syncControllerState()
                 startProgressTicker()
+                val actions = pendingControllerActions.toList()
+                pendingControllerActions.clear()
+                actions.forEach { it(ctrl) }
             }
         }, MoreExecutors.directExecutor())
+    }
+
+    private fun withController(action: (MediaController) -> Unit) {
+        val existing = controller
+        if (existing != null) {
+            action(existing)
+        } else {
+            pendingControllerActions.add(action)
+            ensureControllerConnected()
+        }
     }
 
     private fun startProgressTicker() {
@@ -264,8 +284,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _musicTab.value = tab
     }
 
+    fun setVideoPermissionGranted(granted: Boolean) {
+        if (_hasVideoPermission.value != granted) {
+            _hasVideoPermission.value = granted
+        }
+    }
+
     fun setAudioPermissionGranted(granted: Boolean) {
-        _hasAudioPermission.value = granted
+        if (_hasAudioPermission.value != granted) {
+            _hasAudioPermission.value = granted
+        }
     }
 
     fun addPickedVideos(uris: List<Uri>) {
@@ -283,7 +311,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun playMusicQueue(queue: List<DeviceMediaItem>, startIndex: Int = 0) {
-        val ctrl = controller ?: return
         if (queue.isEmpty()) return
         _musicQueue.value = queue
         val mediaItems = queue.map { track ->
@@ -300,18 +327,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 .build()
         }
-        ctrl.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
-        ctrl.prepare()
-        ctrl.play()
-
         val selected = queue[startIndex.coerceIn(0, queue.lastIndex)]
+        withController { ctrl ->
+            ctrl.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
+            ctrl.prepare()
+            ctrl.play()
+        }
         viewModelScope.launch {
             mediaRepo.recordPlayback(selected, 0L, selected.durationMs, incrementPlay = true)
         }
     }
 
     fun playVideoAsBackgroundAudio(video: DeviceMediaItem, startPositionMs: Long = 0L) {
-        val ctrl = controller ?: return
         val mediaItem = MediaItem.Builder()
             .setMediaId(video.id)
             .setUri(video.uriString)
@@ -322,9 +349,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     .build()
             )
             .build()
-        ctrl.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-        ctrl.prepare()
-        ctrl.play()
+        withController { ctrl ->
+            ctrl.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
+            ctrl.prepare()
+            ctrl.play()
+        }
     }
 
     fun togglePlayPause() {

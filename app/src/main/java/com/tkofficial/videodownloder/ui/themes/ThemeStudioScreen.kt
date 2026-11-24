@@ -64,16 +64,21 @@ fun ThemeStudioScreen(
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     var draft by remember(settings.themeConfig) { mutableStateOf(settings.themeConfig) }
+    fun applyImmediate(next: ThemeConfig) {
+        draft = next
+        viewModel.updateSettings { it.copy(themeConfig = next) }
+    }
 
-    val accentSwatches = listOf(null, 0xFF286BFF, 0xFF7957FF, 0xFF27D7FF, 0xFF10B981, 0xFFEC4899, 0xFFF97316, 0xFFFACC15)
-    val bgSwatches = listOf(null, 0xFF10172A, 0xFF000000, 0xFF07151A, 0xFF1A0F16, 0xFFF4F7FC)
-    val cardSwatches = listOf(null, 0xFF171F33, 0xFF0B0E17, 0xFF0E232B, 0xFF281722, 0xFFFFFFFF)
+    val accentSwatches = listOf(null, 0xFF4D8EFF, 0xFF7957FF, 0xFF27D7FF, 0xFF10B981, 0xFFEC4899, 0xFFF97316, 0xFFFACC15)
+    val bgSwatches = listOf(null, 0xFF0A0F1E, 0xFF000000, 0xFF07151A, 0xFF1A0F16, 0xFFF4F7FC)
+    val cardSwatches = listOf(null, 0xFF131C33, 0xFF0B0E17, 0xFF0E232B, 0xFF281722, 0xFFFFFFFF)
 
     // Live preview wraps the screen itself!
     DownloaderVaTheme(
         config = draft,
         batterySaver = settings.batterySaverMode,
-        lowEndMode = settings.lowEndDeviceMode
+        lowEndMode = settings.lowEndDeviceMode,
+        highContrast = settings.highContrastLabels
     ) {
         val tokens = LocalVaTokens.current
         Scaffold(
@@ -122,7 +127,7 @@ fun ThemeStudioScreen(
                             ThemePreset.entries.forEach { preset ->
                                 FilterChip(
                                     selected = !draft.followSystem && draft.preset == preset.name,
-                                    onClick = { draft = draft.copy(preset = preset.name, followSystem = false) },
+                                    onClick = { applyImmediate(draft.copy(preset = preset.name, followSystem = false)) },
                                     label = { Text(stringResource(preset.labelRes)) }
                                 )
                             }
@@ -136,7 +141,7 @@ fun ThemeStudioScreen(
                             Text(stringResource(R.string.theme_follow_system))
                             Switch(
                                 checked = draft.followSystem,
-                                onCheckedChange = { draft = draft.copy(followSystem = it) }
+                                onCheckedChange = { applyImmediate(draft.copy(followSystem = it)) }
                             )
                         }
                     }
@@ -146,16 +151,16 @@ fun ThemeStudioScreen(
                 item {
                     VaCard {
                         Text(stringResource(R.string.theme_accent_override), style = MaterialTheme.typography.titleMedium)
-                        ColorSwatchRow(accentSwatches, draft.customAccentHex) { draft = draft.copy(customAccentHex = it) }
+                        ColorSwatchRow(accentSwatches, draft.customAccentHex) { applyImmediate(draft.copy(customAccentHex = it)) }
                         Spacer(Modifier.height(10.dp))
                         Text(stringResource(R.string.theme_bg_override), style = MaterialTheme.typography.titleMedium)
-                        ColorSwatchRow(bgSwatches, draft.customBackgroundHex) { draft = draft.copy(customBackgroundHex = it) }
+                        ColorSwatchRow(bgSwatches, draft.customBackgroundHex) { applyImmediate(draft.copy(customBackgroundHex = it)) }
                         Spacer(Modifier.height(10.dp))
                         Text(stringResource(R.string.theme_card_override), style = MaterialTheme.typography.titleMedium)
-                        ColorSwatchRow(cardSwatches, draft.customCardHex) { draft = draft.copy(customCardHex = it) }
+                        ColorSwatchRow(cardSwatches, draft.customCardHex) { applyImmediate(draft.copy(customCardHex = it)) }
                         Spacer(Modifier.height(10.dp))
                         Text(stringResource(R.string.theme_icon_override), style = MaterialTheme.typography.titleMedium)
-                        ColorSwatchRow(accentSwatches, draft.customIconHex) { draft = draft.copy(customIconHex = it) }
+                        ColorSwatchRow(accentSwatches, draft.customIconHex) { applyImmediate(draft.copy(customIconHex = it)) }
                     }
                 }
 
@@ -164,26 +169,49 @@ fun ThemeStudioScreen(
                     VaCard {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.theme_gradients))
-                            Switch(checked = draft.enableGradients, onCheckedChange = { draft = draft.copy(enableGradients = it) })
+                            Switch(checked = draft.enableGradients, onCheckedChange = { applyImmediate(draft.copy(enableGradients = it)) })
                         }
                         Text(stringResource(R.string.theme_glow, (draft.glowIntensity * 100).toInt()), style = MaterialTheme.typography.labelLarge)
-                        Slider(value = draft.glowIntensity, onValueChange = { draft = draft.copy(glowIntensity = it) })
+                        Slider(
+                            value = draft.glowIntensity,
+                            onValueChange = { draft = draft.copy(glowIntensity = it) },
+                            onValueChangeFinished = { applyImmediate(draft) }
+                        )
 
                         Text(stringResource(R.string.theme_radius, draft.borderRadiusDp.toInt()), style = MaterialTheme.typography.labelLarge)
-                        Slider(value = draft.borderRadiusDp, valueRange = 8f..28f, onValueChange = { draft = draft.copy(borderRadiusDp = it) })
+                        Slider(
+                            value = draft.borderRadiusDp,
+                            valueRange = 8f..28f,
+                            onValueChange = { draft = draft.copy(borderRadiusDp = it) },
+                            onValueChangeFinished = { applyImmediate(draft) }
+                        )
 
                         Text(stringResource(R.string.theme_shadow, (draft.shadowIntensity * 100).toInt()), style = MaterialTheme.typography.labelLarge)
-                        Slider(value = draft.shadowIntensity, onValueChange = { draft = draft.copy(shadowIntensity = it) })
+                        Slider(
+                            value = draft.shadowIntensity,
+                            onValueChange = { draft = draft.copy(shadowIntensity = it) },
+                            onValueChangeFinished = { applyImmediate(draft) }
+                        )
 
                         Text(stringResource(R.string.theme_font_scale, String.format(java.util.Locale.US, "%.2f", draft.fontScale)), style = MaterialTheme.typography.labelLarge)
-                        Slider(value = draft.fontScale, valueRange = 0.85f..1.3f, onValueChange = { draft = draft.copy(fontScale = it) })
+                        Slider(
+                            value = draft.fontScale,
+                            valueRange = 0.85f..1.3f,
+                            onValueChange = { draft = draft.copy(fontScale = it) },
+                            onValueChangeFinished = { applyImmediate(draft) }
+                        )
 
                         Text(stringResource(R.string.theme_anim_speed, String.format(java.util.Locale.US, "%.1f", draft.animationSpeed)), style = MaterialTheme.typography.labelLarge)
-                        Slider(value = draft.animationSpeed, valueRange = 0.5f..2.0f, onValueChange = { draft = draft.copy(animationSpeed = it) })
+                        Slider(
+                            value = draft.animationSpeed,
+                            valueRange = 0.5f..2.0f,
+                            onValueChange = { draft = draft.copy(animationSpeed = it) },
+                            onValueChangeFinished = { applyImmediate(draft) }
+                        )
 
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.theme_reduce_motion))
-                            Switch(checked = draft.reduceMotion, onCheckedChange = { draft = draft.copy(reduceMotion = it) })
+                            Switch(checked = draft.reduceMotion, onCheckedChange = { applyImmediate(draft.copy(reduceMotion = it)) })
                         }
                     }
                 }
@@ -196,7 +224,7 @@ fun ThemeStudioScreen(
                             NavStyle.entries.forEach { ns ->
                                 FilterChip(
                                     selected = draft.navStyle == ns.name,
-                                    onClick = { draft = draft.copy(navStyle = ns.name) },
+                                    onClick = { applyImmediate(draft.copy(navStyle = ns.name)) },
                                     label = { Text(stringResource(ns.labelRes)) }
                                 )
                             }
@@ -207,7 +235,7 @@ fun ThemeStudioScreen(
                             IconStyle.entries.forEach { ic ->
                                 FilterChip(
                                     selected = draft.iconStyle == ic.name,
-                                    onClick = { draft = draft.copy(iconStyle = ic.name) },
+                                    onClick = { applyImmediate(draft.copy(iconStyle = ic.name)) },
                                     label = { Text(stringResource(ic.labelRes)) }
                                 )
                             }

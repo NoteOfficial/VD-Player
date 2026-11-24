@@ -205,6 +205,7 @@ class MainActivity : AppCompatActivity() {
             val profileViewModel: ProfileViewModel = viewModel()
 
             val settings by profileViewModel.settings.collectAsStateWithLifecycle()
+            val isSettingsLoaded by profileViewModel.isSettingsLoaded.collectAsStateWithLifecycle()
             val pinState by profileViewModel.pinState.collectAsStateWithLifecycle()
 
             var showSplash by rememberSaveable { mutableStateOf(true) }
@@ -235,11 +236,12 @@ class MainActivity : AppCompatActivity() {
                 onDispose {}
             }
 
-            // Splash reveal timer
-            LaunchedEffect(Unit) {
-                val duration = if (settings.themeConfig.reduceMotion || settings.batterySaverMode) 150L else 850L
-                delay(duration)
-                showSplash = false
+            // Dismiss splash as soon as persisted settings/language/theme load from DataStore
+            LaunchedEffect(isSettingsLoaded) {
+                if (isSettingsLoaded) {
+                    delay(80L)
+                    showSplash = false
+                }
             }
 
             val baseContext = LocalContext.current
@@ -283,10 +285,16 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Track whether VideoPlaybackRoute is active for PiP
+                // Track whether VideoPlaybackRoute is active for PiP and connect MediaController lazily
                 val onVideoRoute = currentDest?.hasRoute(VideoPlaybackRoute::class) == true
+                val onPlayerOrVideo = currentDest?.hasRoute(PlayerRoute::class) == true || onVideoRoute
                 LaunchedEffect(onVideoRoute) {
                     isOnVideoPlayerRoute = onVideoRoute
+                }
+                LaunchedEffect(onPlayerOrVideo) {
+                    if (onPlayerOrVideo) {
+                        playerViewModel.ensureControllerConnected()
+                    }
                 }
 
                 // Handle Share-Intent URL or Notification tap
@@ -416,6 +424,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                             ) { innerPadding ->
                                 val navAnimMs = if (tokens.reduceMotion) 0 else tokens.animDurationMs.coerceIn(140, 300)
+                                if (isSettingsLoaded) {
                                 NavHost(
                                     navController = navController,
                                     startDestination = startRoute,
@@ -507,6 +516,7 @@ class MainActivity : AppCompatActivity() {
                                             initialSection = route.section,
                                             viewModel = profileViewModel,
                                             snackbarHostState = snackbarHostState,
+                                            onOpenThemeStudio = { navController.navigate(ThemeStudioRoute) },
                                             onOpenStorageAnalyzer = { navController.navigate(StorageAnalyzerRoute) },
                                             onOpenBackupRestore = { navController.navigate(BackupRestoreRoute) },
                                             onOpenLegal = { navController.navigate(LegalLicensesRoute) },
@@ -604,6 +614,7 @@ class MainActivity : AppCompatActivity() {
                                             onBack = { navController.popBackStack() }
                                         )
                                     }
+                                }
                                 }
                             }
                         }

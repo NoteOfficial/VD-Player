@@ -114,8 +114,10 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.example.R
 import com.tkofficial.videodownloder.core.DownloaderVaApp
+import com.tkofficial.videodownloder.core.LocaleHelper
 import com.tkofficial.videodownloder.core.findActivity
 import com.tkofficial.videodownloder.database.DownloadedMediaEntity
+import com.tkofficial.videodownloder.models.AppLanguage
 import com.tkofficial.videodownloder.models.AspectRatioMode
 import com.tkofficial.videodownloder.models.DecoderMode
 import com.tkofficial.videodownloder.models.DeviceMediaItem
@@ -319,10 +321,10 @@ fun VideoPlayerScreen(
             }
         }
 
-        LaunchedEffect(isInPipMode, isPlaying) {
+        LaunchedEffect(isInPipMode, isPlaying, settings.language) {
             if (isInPipMode) {
                 runCatching {
-                    activity.setPictureInPictureParams(buildPipParams(context, isPlaying))
+                    activity.setPictureInPictureParams(buildPipParams(context, settings.language, isPlaying))
                 }
             }
         }
@@ -383,7 +385,7 @@ fun VideoPlayerScreen(
                             val next = (cur - dragAmount / 800f).coerceIn(0.05f, 1.0f)
                             lp.screenBrightness = next
                             activity.window.attributes = lp
-                            gestureBanner = context.getString(R.string.vp_brightness_banner, (next * 100).toInt())
+                            gestureBanner = LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_brightness_banner, (next * 100).toInt())
                         } else {
                             val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                             val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -391,7 +393,12 @@ fun VideoPlayerScreen(
                             if (step != 0) {
                                 val nextVol = (curVol + step).coerceIn(0, maxVol)
                                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVol, 0)
-                                gestureBanner = context.getString(R.string.vp_volume_banner, nextVol * 100 / maxVol.coerceAtLeast(1))
+                                gestureBanner = LocaleHelper.getLocalizedString(
+                                    context,
+                                    settings.language,
+                                    R.string.vp_volume_banner,
+                                    nextVol * 100 / maxVol.coerceAtLeast(1)
+                                )
                             }
                         }
                     }
@@ -533,7 +540,7 @@ fun VideoPlayerScreen(
                             // Picture-in-Picture
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
                                 IconButton(onClick = {
-                                    activity.enterPictureInPictureMode(buildPipParams(context, isPlaying))
+                                    activity.enterPictureInPictureMode(buildPipParams(context, settings.language, isPlaying))
                                 }) {
                                     Icon(Icons.Rounded.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White)
                                 }
@@ -608,8 +615,8 @@ fun VideoPlayerScreen(
                                     hasUserChangedAspect = true
                                     val modes = AspectRatioMode.entries
                                     aspectMode = modes[(aspectMode.ordinal + 1) % modes.size]
-                                    val label = aspectMode.labelRes?.let { context.getString(it) } ?: aspectMode.label
-                                    gestureBanner = "${context.getString(R.string.vp_aspect_ratio)}: $label"
+                                    val label = aspectMode.labelRes?.let { LocaleHelper.getLocalizedString(context, settings.language, it) } ?: aspectMode.label
+                                    gestureBanner = "${LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_aspect_ratio)}: $label"
                                 }) {
                                     Icon(Icons.Rounded.AspectRatio, contentDescription = stringResource(R.string.vp_aspect_ratio), tint = Color.White)
                                 }
@@ -627,16 +634,21 @@ fun VideoPlayerScreen(
                                     when {
                                         abRepeatA == null -> {
                                             abRepeatA = positionMs
-                                            gestureBanner = context.getString(R.string.vp_loop_a, FormatUtils.formatDuration(positionMs))
+                                            gestureBanner = LocaleHelper.getLocalizedString(
+                                                context,
+                                                settings.language,
+                                                R.string.vp_loop_a,
+                                                FormatUtils.formatDuration(positionMs)
+                                            )
                                         }
                                         abRepeatB == null -> {
                                             abRepeatB = positionMs
-                                            gestureBanner = context.getString(R.string.vp_loop_ab_active)
+                                            gestureBanner = LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_loop_ab_active)
                                         }
                                         else -> {
                                             abRepeatA = null
                                             abRepeatB = null
-                                            gestureBanner = context.getString(R.string.vp_loop_cleared)
+                                            gestureBanner = LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_loop_cleared)
                                         }
                                     }
                                 }) {
@@ -652,13 +664,13 @@ fun VideoPlayerScreen(
                                     val rawNext = exoPlayer.currentPosition + 33L
                                     val target = if (durationMs > 0L) rawNext.coerceAtMost(durationMs) else rawNext
                                     exoPlayer.seekTo(target)
-                                    gestureBanner = context.getString(R.string.vp_next_frame_banner)
+                                    gestureBanner = LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_next_frame_banner)
                                 }) {
                                     Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.vp_next_frame), tint = Color.White)
                                 }
                                 // Screenshot capture
                                 IconButton(onClick = {
-                                    captureVideoScreenshot(context, scope, playerViewRef, currentTitle) { msg ->
+                                    captureVideoScreenshot(context, settings.language, scope, playerViewRef, currentTitle) { msg ->
                                         scope.launch { snackbarHostState.showSnackbar(msg) }
                                     }
                                 }) {
@@ -791,6 +803,7 @@ fun VideoPlayerScreen(
 @OptIn(UnstableApi::class)
 private fun captureVideoScreenshot(
     context: Context,
+    language: AppLanguage,
     scope: CoroutineScope,
     playerView: PlayerView?,
     title: String,
@@ -798,7 +811,7 @@ private fun captureVideoScreenshot(
 ) {
     val surfaceView = playerView?.videoSurfaceView as? SurfaceView
     if (surfaceView == null || surfaceView.width <= 0 || surfaceView.height <= 0) {
-        onResult(context.getString(R.string.vp_screenshot_surface_err))
+        onResult(LocaleHelper.getLocalizedString(context, language, R.string.vp_screenshot_surface_err))
         return
     }
     val bitmap = Bitmap.createBitmap(surfaceView.width, surfaceView.height, Bitmap.Config.ARGB_8888)
@@ -829,9 +842,9 @@ private fun captureVideoScreenshot(
                                 )
                             )
                         }
-                        context.getString(R.string.vp_screenshot_saved, outFile.name)
+                        LocaleHelper.getLocalizedString(context, language, R.string.vp_screenshot_saved, outFile.name)
                     }.getOrElse {
-                        context.getString(R.string.vp_screenshot_fail)
+                        LocaleHelper.getLocalizedString(context, language, R.string.vp_screenshot_fail)
                     }
                     bitmap.recycle()
                     withContext(Dispatchers.Main) {
@@ -840,7 +853,7 @@ private fun captureVideoScreenshot(
                 }
             } else {
                 bitmap.recycle()
-                onResult(context.getString(R.string.vp_screenshot_fail))
+                onResult(LocaleHelper.getLocalizedString(context, language, R.string.vp_screenshot_fail))
             }
         },
         Handler(Looper.getMainLooper())
@@ -854,7 +867,7 @@ private const val PIP_CMD_PLAY_PAUSE = "play_pause"
 private const val PIP_CMD_FWD = "fwd"
 
 @RequiresApi(Build.VERSION_CODES.O)
-private fun buildPipParams(context: Context, isPlaying: Boolean): PictureInPictureParams {
+private fun buildPipParams(context: Context, language: AppLanguage, isPlaying: Boolean): PictureInPictureParams {
     fun createRemoteAction(requestCode: Int, cmd: String, iconRes: Int, title: String): RemoteAction {
         val intent = Intent(PIP_CONTROL_ACTION).apply {
             setPackage(context.packageName)
@@ -870,14 +883,24 @@ private fun buildPipParams(context: Context, isPlaying: Boolean): PictureInPictu
     }
 
     val actions = listOf(
-        createRemoteAction(101, PIP_CMD_REW, android.R.drawable.ic_media_rew, context.getString(R.string.vp_rewind_10s)),
+        createRemoteAction(
+            101,
+            PIP_CMD_REW,
+            android.R.drawable.ic_media_rew,
+            LocaleHelper.getLocalizedString(context, language, R.string.vp_rewind_10s)
+        ),
         createRemoteAction(
             102,
             PIP_CMD_PLAY_PAUSE,
             if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-            context.getString(R.string.player_play_pause)
+            LocaleHelper.getLocalizedString(context, language, R.string.player_play_pause)
         ),
-        createRemoteAction(103, PIP_CMD_FWD, android.R.drawable.ic_media_ff, context.getString(R.string.vp_forward_10s))
+        createRemoteAction(
+            103,
+            PIP_CMD_FWD,
+            android.R.drawable.ic_media_ff,
+            LocaleHelper.getLocalizedString(context, language, R.string.vp_forward_10s)
+        )
     )
     return PictureInPictureParams.Builder()
         .setAspectRatio(Rational(16, 9))

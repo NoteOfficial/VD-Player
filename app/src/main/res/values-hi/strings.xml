@@ -22,7 +22,7 @@
     <string name="perm_allow">अनुमति दें</string>
     <string name="perm_open_settings">ऐप सेटिंग्स</string>
     <string name="perm_section_title">ऐप अनुमतियां</string>
-    <string name="perm_section_desc">वैकल्पिक सुविधाओं के लिए आवश्यक अनुमतियां प्रबंधित करें। फ़ोटो और वीडियो के लिए शून्य-अनुमति Android Photo Picker उपयोग होता है।</string>
+    <string name="perm_section_desc">सूचनाओं, डिवाइस वीडियो, फ़ोटो, म्यूज़िक लाइब्रेरी और कैमरे के लिए आवश्यक अनुमतियां प्रबंधित करें।</string>
     <string name="perm_notif_name">सूचनाएं (Android 13+)</string>
     <string name="perm_audio_name">डिवाइस म्यूज़िक लाइब्रेरी</string>
     <string name="perm_camera_name">कैमरा (QR स्कैनर)</string>
@@ -122,7 +122,7 @@
     <string name="notif_clear_all">सभी साफ़ करें</string>
 
     <string name="gallery_title">डाउनलोड गैलरी</string>
-    <string name="gallery_subtitle">केवल VD Player से डाउनलोड किया गया मीडिया</string>
+    <string name="gallery_subtitle">डिवाइस फ़ोटो, वीडियो और VD Player डाउनलोड</string>
     <string name="gallery_all">सभी</string>
     <string name="gallery_photos">फ़ोटो</string>
     <string name="gallery_videos">वीडियो</string>
@@ -130,7 +130,7 @@
     <string name="gallery_favorites">पसंदीदा</string>
     <string name="gallery_recent">हाल ही में</string>
     <string name="gallery_trash">ट्रैश</string>
-    <string name="gallery_empty">अभी तक कोई डाउनलोड किया गया मीडिया नहीं है।</string>
+    <string name="gallery_empty">अभी तक कोई फ़ोटो या वीडियो नहीं मिला। मीडिया अनुमति दें या डाउनलोड करें।</string>
     <string name="gallery_new_album">नया एल्बम</string>
     <string name="gallery_slideshow">स्लाइडशो</string>
     <string name="gallery_restore">पुनर्स्थापित करें</string>
@@ -171,7 +171,7 @@
     <string name="player_artists">कलाकार</string>
     <string name="player_most_played">सबसे अधिक सुने गए</string>
     <string name="player_recently_added">हाल ही में जोड़े गए</string>
-    <string name="player_import_videos">वीडियो चुनें</string>
+    <string name="player_import_videos">वीडियो जोड़ें</string>
     <string name="player_import_audio">ऑडियो चुनें</string>
     <string name="player_audio_only">केवल ऑडियो (बैकग्राउंड)</string>
     <string name="player_pip">पिक्चर-इन-पिक्चर</string>
@@ -641,4 +641,18 @@
     <string name="api_import_failed">API कॉन्फ़िगरेशन JSON आयात विफल रहा।</string>
     <string name="api_exported_ok">API JSON कॉन्फ़िगरेशन निर्यात किया गया।</string>
     <string name="api_export_failed">API कॉन्फ़िगरेशन JSON निर्यात विफल रहा।</string>
+
+    <string name="perm_video_name">डिवाइस वीडियो लाइब्रेरी</string>
+    <string name="perm_photos_name">डिवाइस फ़ोटो और गैलरी</string>
+    <string name="perm_all_title">आवश्यक अनुमतियां दें</string>
+    <string name="perm_all_desc">डिवाइस के वीडियो, फ़ोटो, म्यूज़िक और लाइव डाउनलोड सूचनाएं दिखाने के लिए अनुमतियां दें।</string>
+    <string name="perm_grant_all_btn">सभी अनुमतियां दें</string>
+    <string name="gallery_perm_title">डिवाइस फ़ोटो और वीडियो देखें</string>
+    <string name="gallery_perm_desc">डाउनलोड के साथ अपने डिवाइस के सभी फ़ोटो और वीडियो देखने के लिए अनुमति दें।</string>
+    <string name="gallery_scan_btn">अनुमति दें</string>
+    <string name="player_scan_video_title">डिवाइस वीडियो लाइब्रेरी स्कैन</string>
+    <string name="player_scan_video_desc">सभी डिवाइस वीडियो देखने के लिए वीडियो अनुमति दें या ऊपर से फ़ाइलें चुनें।</string>
+    <string name="set_quick_theme">त्वरित थीम और डिज़ाइन</string>
+    <string name="set_open_theme_studio">थीम स्टूडियो खोलें</string>
+    <string name="gallery_device_item_note">डिवाइस मीडिया को एल्बम में कॉपी किया जा सकता है या वॉल्ट में एन्क्रिप्टेड कॉपी भेजी जा सकती है।</string>
 </resources>
