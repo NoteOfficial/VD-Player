@@ -118,6 +118,7 @@ fun BrowserScreen(
     val latestTabTitle by androidx.compose.runtime.rememberUpdatedState(currentTab.title)
     val latestSnifferEnabled by androidx.compose.runtime.rememberUpdatedState(settings.browserMediaSnifferEnabled)
     val latestAllowHttp by androidx.compose.runtime.rememberUpdatedState(settings.allowCleartextHttp)
+    val latestJsEnabled by androidx.compose.runtime.rememberUpdatedState(settings.browserJavaScriptEnabled)
 
     BackHandler(enabled = webCanGoBack) {
         webViewRef?.goBack()
@@ -298,8 +299,13 @@ fun BrowserScreen(
                         }
 
                         webChromeClient = object : WebChromeClient() {
+                            private var lastProgress = -1
+
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                viewModel.updateActiveTab(progress = newProgress, isLoading = newProgress < 100)
+                                if (newProgress == 0 || newProgress == 100 || kotlin.math.abs(newProgress - lastProgress) >= 5) {
+                                    lastProgress = newProgress
+                                    viewModel.updateActiveTab(progress = newProgress, isLoading = newProgress < 100)
+                                }
                             }
 
                             override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -390,7 +396,9 @@ fun BrowserScreen(
                     }
                 },
                 update = { wv ->
-                    wv.settings.javaScriptEnabled = settings.browserJavaScriptEnabled
+                    if (wv.settings.javaScriptEnabled != latestJsEnabled) {
+                        wv.settings.javaScriptEnabled = latestJsEnabled
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -511,7 +519,7 @@ fun BrowserScreen(
                                 color = if (idx == activeIdx) tokens.primaryAccent else MaterialTheme.colorScheme.onSurface
                             )
                             if (tabs.size > 1) {
-                                VaIconButton(onClick = { viewModel.closeTab(idx) }) {
+                                VaIconButton(onClick = { viewModel.closeTab(idx) }, animatePress = false) {
                                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.browser_close_tab))
                                 }
                             }
@@ -549,7 +557,7 @@ fun BrowserScreen(
                                     Text(bm.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(bm.url, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                VaIconButton(onClick = { viewModel.toggleBookmark(bm.title, bm.url) }) {
+                                VaIconButton(onClick = { viewModel.toggleBookmark(bm.title, bm.url) }, animatePress = false) {
                                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.vp_remove))
                                 }
                             }

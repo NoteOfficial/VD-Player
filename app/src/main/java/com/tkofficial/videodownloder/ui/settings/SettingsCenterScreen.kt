@@ -256,6 +256,7 @@ fun SettingsCenterScreen(
                     val title = stringResource(sec.titleRes)
                     VaCard(
                         onClick = { activeSection = sec },
+                        lightweight = true,
                         contentPadding = PaddingValues(14.dp),
                         modifier = Modifier.testTag("settings_sec_${sec.id}")
                     ) {

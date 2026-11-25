@@ -158,9 +158,20 @@ fun VaIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    animatePress: Boolean = true,
     colors: IconButtonColors = IconButtonDefaults.iconButtonColors(),
     content: @Composable () -> Unit
 ) {
+    if (!animatePress) {
+        IconButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            colors = colors,
+            content = content
+        )
+        return
+    }
     val interactionSource = remember { MutableInteractionSource() }
     IconButton(
         onClick = onClick,
@@ -209,7 +220,13 @@ fun VaCard(
                 }
             }
             .clip(shape)
-            .background(tokens.surfaceGradient, shape)
+            .let { m ->
+                if (lightweight) {
+                    m.background(tokens.cardSurface, shape)
+                } else {
+                    m.background(tokens.surfaceGradient, shape)
+                }
+            }
             .border(BorderStroke(1.dp, borderColor), shape)
             .let { m ->
                 if (onClick != null) m.clickable(onClick = onClick) else m
@@ -298,7 +315,7 @@ fun VaFolderCard(
         Row(
             modifier = modifier
                 .clip(shape)
-                .background(tokens.surfaceGradient, shape)
+                .background(tokens.cardSurface, shape)
                 .border(BorderStroke(1.dp, borderColor), shape)
                 .clickable(onClick = onClick)
                 .padding(12.dp)

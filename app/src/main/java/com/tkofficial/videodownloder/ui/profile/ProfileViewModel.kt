@@ -90,7 +90,7 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val _integrityReport = MutableStateFlow<IntegrityReport?>(null)
     val integrityReport: StateFlow<IntegrityReport?> = _integrityReport.asStateFlow()
 
-    private val _currentDir = MutableStateFlow(fileRepo.getRootDirectory())
+    private val _currentDir = MutableStateFlow(File(app.filesDir, "VDPlayer"))
     val currentDir: StateFlow<File> = _currentDir.asStateFlow()
 
     private val _fileEntries = MutableStateFlow<List<FileEntry>>(emptyList())
@@ -99,6 +99,7 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val _showHiddenFiles = MutableStateFlow(false)
     val showHiddenFiles: StateFlow<Boolean> = _showHiddenFiles.asStateFlow()
 
+    private var hasResolvedInitialRoot = false
     private var loadDirJob: Job? = null
 
     private val _storageSummary = MutableStateFlow<StorageSummary?>(null)
@@ -492,11 +493,22 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // File Manager
-    fun loadDirectory(dir: File = _currentDir.value) {
+    fun loadDirectory(dir: File? = null) {
         loadDirJob?.cancel()
         loadDirJob = viewModelScope.launch {
-            val loaded = fileRepo.listDirectory(dir, _showHiddenFiles.value)
-            _currentDir.value = dir
+            val targetDir = when {
+                dir != null -> {
+                    hasResolvedInitialRoot = true
+                    dir
+                }
+                !hasResolvedInitialRoot -> {
+                    hasResolvedInitialRoot = true
+                    withContext(Dispatchers.IO) { fileRepo.getRootDirectory() }
+                }
+                else -> _currentDir.value
+            }
+            val loaded = fileRepo.listDirectory(targetDir, _showHiddenFiles.value)
+            _currentDir.value = targetDir
             _fileEntries.value = loaded
         }
     }

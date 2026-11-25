@@ -523,6 +523,7 @@
     <string name="fm_delete_count">Delete (%1$d)</string>
     <string name="fm_up_folder">.. (Up Folder)</string>
     <string name="fm_items_count">%1$d items</string>
+    <string name="fm_folder_label">Folder</string>
     <string name="fm_create_folder">Create Folder</string>
     <string name="fm_hashes_title">File Integrity Hashes</string>
     <string name="fm_batch_rename_title">Batch Rename (%1$d files)</string>

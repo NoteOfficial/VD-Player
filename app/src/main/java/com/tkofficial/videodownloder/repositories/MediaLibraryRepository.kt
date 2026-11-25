@@ -458,10 +458,14 @@ class MediaLibraryRepository(
                         val contentUri = ContentUris.withAppendedId(collection, id)
                         val uriStr = contentUri.toString()
                         val albumId = cursor.getLong(albumIdCol)
-                        val artUri = ContentUris.withAppendedId(
-                            Uri.parse("content://media/external/audio/albumart"),
-                            albumId
-                        ).toString()
+                        val artUri = if (albumId > 0L) {
+                            ContentUris.withAppendedId(
+                                Uri.parse("content://media/external/audio/albumart"),
+                                albumId
+                            ).toString()
+                        } else {
+                            null
+                        }
 
                         result.putIfAbsent(
                             uriStr,

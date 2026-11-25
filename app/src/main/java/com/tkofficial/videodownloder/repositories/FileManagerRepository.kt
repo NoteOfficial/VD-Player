@@ -36,7 +36,7 @@ class FileManagerRepository(private val context: Context) {
                     lastModified = file.lastModified(),
                     isHidden = file.isHidden || file.name.startsWith("."),
                     category = cat,
-                    childCount = if (file.isDirectory) file.list()?.size ?: 0 else 0
+                    childCount = -1
                 )
             }
             .sortedWith(compareByDescending<FileEntry> { it.isDirectory }.thenBy { it.name.lowercase() })

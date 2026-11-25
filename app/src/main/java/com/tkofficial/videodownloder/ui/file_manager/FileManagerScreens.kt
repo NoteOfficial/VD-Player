@@ -228,17 +228,22 @@ fun FileManagerScreen(
                     item(key = "fm_up_folder", contentType = "up_folder") {
                         VaCard(onClick = {
                             currentDir.parentFile?.let { viewModel.loadDirectory(it) }
-                        }, contentPadding = PaddingValues(12.dp)) {
+                        }, lightweight = true, contentPadding = PaddingValues(12.dp)) {
                             Text(stringResource(R.string.fm_up_folder), style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
                 items(filtered, key = { it.path }, contentType = { if (it.isDirectory) "dir" else "file" }) { entry ->
                     val isSel = selectedPaths.contains(entry.path)
+                    val folderSubtitle = if (entry.childCount >= 0) {
+                        stringResource(R.string.fm_items_count, entry.childCount)
+                    } else {
+                        stringResource(R.string.fm_folder_label)
+                    }
                     if (entry.isDirectory && !isSel) {
                         VaFolderCard(
                             title = entry.name,
-                            subtitle = stringResource(R.string.fm_items_count, entry.childCount),
+                            subtitle = folderSubtitle,
                             icon = Icons.Rounded.Folder,
                             onClick = { viewModel.loadDirectory(File(entry.path)) },
                             lightweight = true
@@ -266,30 +271,30 @@ fun FileManagerScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(entry.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    if (entry.isDirectory) stringResource(R.string.fm_items_count, entry.childCount) else FormatUtils.formatBytes(entry.sizeBytes),
+                                    if (entry.isDirectory) folderSubtitle else FormatUtils.formatBytes(entry.sizeBytes),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (!entry.isDirectory) {
                                 if (entry.name.endsWith(".zip", true)) {
-                                    VaIconButton(onClick = { viewModel.extractZipEntry(entry) }) {
+                                    VaIconButton(onClick = { viewModel.extractZipEntry(entry) }, animatePress = false) {
                                         Icon(Icons.Rounded.Unarchive, contentDescription = stringResource(R.string.fm_extract_zip))
                                     }
                                 }
-                                VaIconButton(onClick = { hashTarget = entry }) {
+                                VaIconButton(onClick = { hashTarget = entry }, animatePress = false) {
                                     Icon(Icons.Rounded.Tag, contentDescription = stringResource(R.string.fm_file_hash))
                                 }
-                                VaIconButton(onClick = { viewModel.shareFileEntry(entry) }) {
+                                VaIconButton(onClick = { viewModel.shareFileEntry(entry) }, animatePress = false) {
                                     Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
                                 }
                             }
-                            VaIconButton(onClick = { renameTarget = entry }) {
+                            VaIconButton(onClick = { renameTarget = entry }, animatePress = false) {
                                 Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = stringResource(R.string.action_rename))
                             }
                             VaIconButton(onClick = {
                                 selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
-                            }) {
+                            }, animatePress = false) {
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.gallery_select), tint = if (isSel) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -660,7 +665,7 @@ fun BackupRestoreScreen(
             if (records.isNotEmpty()) {
                 item { Text(stringResource(R.string.backup_history_title), style = MaterialTheme.typography.titleMedium) }
                 items(records, key = { it.id }, contentType = { "backup_record" }) { rec ->
-                    VaCard(contentPadding = PaddingValues(12.dp)) {
+                    VaCard(lightweight = true, contentPadding = PaddingValues(12.dp)) {
                         Text(rec.fileName, style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.backup_items_meta, rec.itemCount, rec.sha256Integrity.take(16)), style = MaterialTheme.typography.labelSmall)
                     }
@@ -725,7 +730,7 @@ fun DownloadHistoryScreen(
                 item { VaCard { Text(stringResource(R.string.history_empty)) } }
             } else {
                 items(history, key = { it.id }, contentType = { "download_history" }) { h ->
-                    VaCard(contentPadding = PaddingValues(12.dp)) {
+                    VaCard(lightweight = true, contentPadding = PaddingValues(12.dp)) {
                         Text(h.fileName, style = MaterialTheme.typography.titleMedium)
                         Text("${h.platform} • ${h.status} • ${FormatUtils.formatBytes(h.fileSize)}", style = MaterialTheme.typography.labelSmall)
                         Text(h.url, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)

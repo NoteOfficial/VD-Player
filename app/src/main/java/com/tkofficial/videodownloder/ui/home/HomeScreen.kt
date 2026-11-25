@@ -8,7 +8,6 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -145,22 +144,9 @@ fun HomeScreen(
     val context = LocalContext.current
     val tokens = LocalVaTokens.current
 
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val urlInput by viewModel.urlInput.collectAsStateWithLifecycle()
-    val batchMode by viewModel.batchMode.collectAsStateWithLifecycle()
-    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
-    val filterCategory by viewModel.filterCategory.collectAsStateWithLifecycle()
-    val analysisState by viewModel.analysisState.collectAsStateWithLifecycle()
+    val displayedDownloads by viewModel.displayedDownloads.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
-
-    val activeList by viewModel.activeDownloads.collectAsStateWithLifecycle()
-    val queueList by viewModel.queuedDownloads.collectAsStateWithLifecycle()
-    val completedList by viewModel.completedDownloads.collectAsStateWithLifecycle()
-    val failedList by viewModel.failedDownloads.collectAsStateWithLifecycle()
-    val totalCompletedBytes by viewModel.totalCompletedBytes.collectAsStateWithLifecycle()
-    val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
-    val unreadNotifs by viewModel.unreadNotifications.collectAsStateWithLifecycle()
 
     var showSearchBar by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<DownloadEntity?>(null) }
@@ -197,36 +183,6 @@ fun HomeScreen(
         }
     }
 
-    val rawList = remember(
-        selectedTab,
-        activeList,
-        queueList,
-        completedList,
-        failedList,
-        searchQuery,
-        filterCategory
-    ) {
-        when (selectedTab) {
-            DownloadManagerTab.ACTIVE -> activeList
-            DownloadManagerTab.QUEUE -> queueList
-            DownloadManagerTab.COMPLETED -> completedList
-            DownloadManagerTab.FAILED -> failedList
-        }.filter { item ->
-            val matchesSearch = searchQuery.isBlank() ||
-                item.fileName.contains(searchQuery, true) ||
-                item.platform.contains(searchQuery, true)
-            val matchesCategory = filterCategory == null || item.mediaType == filterCategory?.name
-            matchesSearch && matchesCategory
-        }
-    }
-
-    val currentHour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val greeting = when (currentHour) {
-        in 5..11 -> stringResource(R.string.greeting_morning)
-        in 12..16 -> stringResource(R.string.greeting_afternoon)
-        else -> stringResource(R.string.greeting_evening)
-    }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -235,73 +191,19 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         // A. Top Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    VaLogoEmblem(sizeDp = 42)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "$greeting, ${settings.userDisplayName}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    VaIconButton(
-                        onClick = { showSearchBar = !showSearchBar },
-                        modifier = Modifier.size(48.dp).testTag("home_search_btn")
-                    ) {
-                        Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.cd_search), tint = tokens.iconTint)
-                    }
-                    VaIconButton(
-                        onClick = onOpenNotifications,
-                        modifier = Modifier.size(48.dp).testTag("home_notifications_btn")
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (unreadNotifs > 0) {
-                                    Badge { Text(unreadNotifs.coerceAtMost(99).toString()) }
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Notifications, contentDescription = stringResource(R.string.cd_notifications), tint = tokens.iconTint)
-                        }
-                    }
-                    VaIconButton(
-                        onClick = onOpenProfile,
-                        modifier = Modifier.size(48.dp).testTag("home_profile_btn")
-                    ) {
-                        Icon(Icons.Rounded.Person, contentDescription = stringResource(R.string.cd_profile), tint = tokens.iconTint)
-                    }
-                    VaIconButton(
-                        onClick = onOpenSettings,
-                        modifier = Modifier.size(48.dp).testTag("home_settings_btn")
-                    ) {
-                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.cd_settings), tint = tokens.iconTint)
-                    }
-                }
-            }
+        item(key = "home_header", contentType = "header") {
+            HomeHeaderRow(
+                viewModel = viewModel,
+                onToggleSearch = { showSearchBar = !showSearchBar },
+                onOpenNotifications = onOpenNotifications,
+                onOpenProfile = onOpenProfile,
+                onOpenSettings = onOpenSettings
+            )
         }
 
         // Unified runtime permissions prompt (Notifications, Videos, Photos, Music)
         if (missingPermissions.isNotEmpty()) {
-            item {
+            item(key = "home_permissions", contentType = "permissions") {
                 VaCard(highlighted = true) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.perm_all_title), style = MaterialTheme.typography.titleMedium)
@@ -337,262 +239,44 @@ fun HomeScreen(
         // Search Bar
         item(key = "home_search_bar_holder", contentType = "search_bar") {
             AnimatedVisibility(visible = showSearchBar) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = viewModel::setSearchQuery,
-                    modifier = Modifier.fillMaxWidth().testTag("home_search_input"),
-                    placeholder = { Text(stringResource(R.string.home_search_hint)) },
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            VaIconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.btn_clear))
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(tokens.smallRadius)
-                )
+                HomeSearchBar(viewModel = viewModel)
             }
         }
 
         // B. Smart Downloader Card
-        item {
-            VaCard(highlighted = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.smart_downloader_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.smart_downloader_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !batchMode,
-                        onClick = { viewModel.setBatchMode(false) },
-                        label = { Text(stringResource(R.string.mode_single_link)) },
-                        modifier = Modifier.testTag("single_mode_chip")
-                    )
-                    FilterChip(
-                        selected = batchMode,
-                        onClick = { viewModel.setBatchMode(true) },
-                        label = { Text(stringResource(R.string.mode_batch_links)) },
-                        modifier = Modifier.testTag("batch_mode_chip")
-                    )
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = viewModel::onUrlChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .let { if (batchMode) it.height(112.dp) else it }
-                        .testTag("url_input_field"),
-                    placeholder = {
-                        Text(
-                            if (batchMode) stringResource(R.string.batch_url_hint)
-                            else stringResource(R.string.url_hint)
-                        )
-                    },
-                    singleLine = !batchMode,
-                    maxLines = if (batchMode) 5 else 1,
-                    shape = RoundedCornerShape(tokens.smallRadius),
-                    trailingIcon = {
-                        Row {
-                            VaIconButton(
-                                onClick = {
-                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                                    if (clip.isNotBlank()) viewModel.onUrlChange(clip)
-                                },
-                                modifier = Modifier.testTag("paste_url_btn")
-                            ) {
-                                Icon(Icons.Rounded.ContentPaste, contentDescription = stringResource(R.string.btn_paste), tint = tokens.iconTint)
-                            }
-                            if (urlInput.isNotEmpty()) {
-                                VaIconButton(
-                                    onClick = { viewModel.clearAnalysis() },
-                                    modifier = Modifier.testTag("clear_url_btn")
-                                ) {
-                                    Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.btn_clear))
-                                }
-                            }
-                        }
-                    }
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                VaPrimaryButton(
-                    text = if (batchMode) stringResource(R.string.btn_process_batch) else stringResource(R.string.btn_process_link),
-                    icon = Icons.Rounded.Download,
-                    enabled = urlInput.isNotBlank() && analysisState !is UiState.Loading,
-                    onClick = {
-                        if (batchMode) viewModel.processBatchUrls() else viewModel.analyzeSingleLink()
-                    },
-                    testTag = "process_link_btn",
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // C. Media Information Result Card
-                AnimatedVisibility(visible = analysisState !is UiState.Idle) {
-                    Column(modifier = Modifier.padding(top = 14.dp)) {
-                        when (val st = analysisState) {
-                            UiState.Loading -> {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
-                                    Text(stringResource(R.string.analyzing_link), style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                            is UiState.Error -> {
-                                VaCard(
-                                    contentPadding = PaddingValues(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = tokens.danger)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(st.message, color = tokens.danger, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                }
-                            }
-                            is UiState.Success -> {
-                                AnalyzedMediaPreview(
-                                    media = st.data,
-                                    onDownloadOption = { opt -> viewModel.enqueueAnalyzedOption(st.data, opt, 0L) },
-                                    onScheduleOption = { opt -> scheduleTarget = st.data to opt }
-                                )
-                            }
-                            UiState.Idle -> {}
-                        }
-                    }
-                }
-            }
+        item(key = "home_smart_downloader", contentType = "downloader") {
+            HomeSmartDownloaderSection(
+                viewModel = viewModel,
+                onScheduleOption = { media, opt -> scheduleTarget = media to opt }
+            )
         }
 
         // F. Quick Access
-        item {
-            VaSectionTitle(title = stringResource(R.string.section_quick_access))
-            Spacer(Modifier.height(8.dp))
-            val quickItems = listOf(
-                Triple(stringResource(R.string.qa_video_dl), Icons.Rounded.VideoFile) {
-                    viewModel.setFilterCategory(if (filterCategory == MediaCategory.VIDEO) null else MediaCategory.VIDEO)
-                },
-                Triple(stringResource(R.string.qa_audio_dl), Icons.Rounded.AudioFile) {
-                    viewModel.setFilterCategory(if (filterCategory == MediaCategory.AUDIO) null else MediaCategory.AUDIO)
-                },
-                Triple(stringResource(R.string.qa_image_dl), Icons.Rounded.Image) {
-                    viewModel.setFilterCategory(if (filterCategory == MediaCategory.IMAGE) null else MediaCategory.IMAGE)
-                },
-                Triple(stringResource(R.string.qa_file_manager), Icons.Rounded.Folder, onOpenFileManager),
-                Triple(stringResource(R.string.qa_media_studio), Icons.Rounded.AutoFixHigh, onOpenMediaStudio),
-                Triple(stringResource(R.string.qa_private_vault), Icons.Rounded.Lock, onOpenVault),
-                Triple(stringResource(R.string.qa_storage_analyzer), Icons.Rounded.Storage, onOpenStorageAnalyzer),
-                Triple(stringResource(R.string.qa_browser), Icons.Rounded.Language, onOpenBrowser),
-                Triple(stringResource(R.string.qa_history), Icons.Rounded.History, onOpenHistory),
-                Triple(stringResource(R.string.qa_notifications), Icons.Rounded.Notifications, onOpenNotifications)
+        item(key = "home_quick_access", contentType = "quick_access_row") {
+            HomeQuickAccessSection(
+                viewModel = viewModel,
+                onOpenFileManager = onOpenFileManager,
+                onOpenMediaStudio = onOpenMediaStudio,
+                onOpenVault = onOpenVault,
+                onOpenStorageAnalyzer = onOpenStorageAnalyzer,
+                onOpenBrowser = onOpenBrowser,
+                onOpenHistory = onOpenHistory,
+                onOpenNotifications = onOpenNotifications
             )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(quickItems, key = { it.first }, contentType = { "quick_access" }) { (label, icon, action) ->
-                    val isSelectedFilter = (label == stringResource(R.string.qa_video_dl) && filterCategory == MediaCategory.VIDEO) ||
-                        (label == stringResource(R.string.qa_audio_dl) && filterCategory == MediaCategory.AUDIO) ||
-                        (label == stringResource(R.string.qa_image_dl) && filterCategory == MediaCategory.IMAGE)
-
-                    VaCard(
-                        onClick = action,
-                        highlighted = isSelectedFilter,
-                        lightweight = true,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                        modifier = Modifier.width(88.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(icon, contentDescription = label, tint = tokens.iconTint, modifier = Modifier.size(26.dp))
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         // G. Real Statistics Card
-        item {
-            VaCard {
-                VaSectionTitle(title = stringResource(R.string.section_recent_activity))
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    StatMiniBlock(stringResource(R.string.stat_active), activeList.size.toString(), tokens.primaryAccent, Modifier.weight(1f))
-                    StatMiniBlock(stringResource(R.string.stat_queued), queueList.size.toString(), tokens.warning, Modifier.weight(1f))
-                    StatMiniBlock(stringResource(R.string.stat_completed), completedCount.toString(), tokens.success, Modifier.weight(1f))
-                    StatMiniBlock(stringResource(R.string.stat_total_data), FormatUtils.formatBytes(totalCompletedBytes), tokens.tertiaryAccent, Modifier.weight(1f))
-                }
-            }
+        item(key = "home_stats_card", contentType = "stats") {
+            HomeStatsCard(viewModel = viewModel)
         }
 
         // D. Advanced Download Manager Tabs
-        item {
-            val tabs = listOf(
-                DownloadManagerTab.ACTIVE to "${stringResource(R.string.tab_active)} (${activeList.size})",
-                DownloadManagerTab.QUEUE to "${stringResource(R.string.tab_queue)} (${queueList.size})",
-                DownloadManagerTab.COMPLETED to "${stringResource(R.string.tab_completed)} (${completedList.size})",
-                DownloadManagerTab.FAILED to "${stringResource(R.string.tab_failed)} (${failedList.size})"
-            )
-            TabRow(
-                selectedTabIndex = selectedTab.ordinal,
-                containerColor = tokens.cardSurface,
-                contentColor = tokens.primaryAccent,
-                modifier = Modifier.clip(RoundedCornerShape(tokens.smallRadius))
-            ) {
-                tabs.forEach { (tab, title) ->
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { viewModel.selectTab(tab) },
-                        text = {
-                            Text(
-                                text = title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        },
-                        modifier = Modifier.testTag("dm_tab_${tab.name.lowercase()}")
-                    )
-                }
-            }
+        item(key = "home_dm_tabs", contentType = "tabs") {
+            HomeDownloadsTabRow(viewModel = viewModel)
         }
 
-        if (rawList.isEmpty()) {
-            item {
+        if (displayedDownloads.isEmpty()) {
+            item(key = "home_empty_downloads", contentType = "empty") {
                 VaCard {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
@@ -613,29 +297,27 @@ fun HomeScreen(
                 }
             }
         } else {
-            items(rawList, key = { it.id }, contentType = { it.status }) { item ->
-                Box(modifier = Modifier.animateItem()) {
-                    DownloadItemCard(
-                        item = item,
-                        onPause = { viewModel.pauseDownload(item.id) },
-                        onResume = { viewModel.resumeDownload(item.id) },
-                        onCancel = { viewModel.cancelDownload(item.id) },
-                        onRetry = { viewModel.retryDownload(item.id) },
-                        onRename = { renameTarget = item },
-                        onDelete = { deleteTarget = item },
-                        onShare = { viewModel.shareDownload(item) },
-                        onOpen = {
-                            if (item.mediaType == MediaCategory.VIDEO.name && File(item.localPath).exists()) {
-                                onPlayVideo(android.net.Uri.fromFile(File(item.localPath)).toString(), item.title)
-                            } else {
-                                viewModel.openExternal(item)
-                            }
-                        },
-                        onDetails = { detailsTarget = item },
-                        onMoveUp = { viewModel.movePriority(item.id, 1) },
-                        onMoveDown = { viewModel.movePriority(item.id, -1) }
-                    )
-                }
+            items(displayedDownloads, key = { it.id }, contentType = { it.status }) { item ->
+                DownloadItemCard(
+                    item = item,
+                    onPause = { viewModel.pauseDownload(item.id) },
+                    onResume = { viewModel.resumeDownload(item.id) },
+                    onCancel = { viewModel.cancelDownload(item.id) },
+                    onRetry = { viewModel.retryDownload(item.id) },
+                    onRename = { renameTarget = item },
+                    onDelete = { deleteTarget = item },
+                    onShare = { viewModel.shareDownload(item) },
+                    onOpen = {
+                        if (item.mediaType == MediaCategory.VIDEO.name && File(item.localPath).exists()) {
+                            onPlayVideo(android.net.Uri.fromFile(File(item.localPath)).toString(), item.title)
+                        } else {
+                            viewModel.openExternal(item)
+                        }
+                    },
+                    onDetails = { detailsTarget = item },
+                    onMoveUp = { viewModel.movePriority(item.id, 1) },
+                    onMoveDown = { viewModel.movePriority(item.id, -1) }
+                )
             }
         }
 
@@ -751,6 +433,401 @@ fun HomeScreen(
                 VaTextButton(onClick = { scheduleTarget = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
+    }
+}
+
+@Composable
+private fun HomeHeaderRow(
+    viewModel: HomeViewModel,
+    onToggleSearch: () -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val unreadNotifs by viewModel.unreadNotifications.collectAsStateWithLifecycle()
+    val currentHour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val greeting = when (currentHour) {
+        in 5..11 -> stringResource(R.string.greeting_morning)
+        in 12..16 -> stringResource(R.string.greeting_afternoon)
+        else -> stringResource(R.string.greeting_evening)
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            VaLogoEmblem(sizeDp = 42)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "$greeting, ${settings.userDisplayName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            VaIconButton(
+                onClick = onToggleSearch,
+                modifier = Modifier.size(48.dp).testTag("home_search_btn")
+            ) {
+                Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.cd_search), tint = tokens.iconTint)
+            }
+            VaIconButton(
+                onClick = onOpenNotifications,
+                modifier = Modifier.size(48.dp).testTag("home_notifications_btn")
+            ) {
+                BadgedBox(
+                    badge = {
+                        if (unreadNotifs > 0) {
+                            Badge { Text(unreadNotifs.coerceAtMost(99).toString()) }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Rounded.Notifications, contentDescription = stringResource(R.string.cd_notifications), tint = tokens.iconTint)
+                }
+            }
+            VaIconButton(
+                onClick = onOpenProfile,
+                modifier = Modifier.size(48.dp).testTag("home_profile_btn")
+            ) {
+                Icon(Icons.Rounded.Person, contentDescription = stringResource(R.string.cd_profile), tint = tokens.iconTint)
+            }
+            VaIconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.size(48.dp).testTag("home_settings_btn")
+            ) {
+                Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.cd_settings), tint = tokens.iconTint)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeSearchBar(viewModel: HomeViewModel) {
+    val tokens = LocalVaTokens.current
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = viewModel::setSearchQuery,
+        modifier = Modifier.fillMaxWidth().testTag("home_search_input"),
+        placeholder = { Text(stringResource(R.string.home_search_hint)) },
+        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        trailingIcon = {
+            if (searchQuery.isNotEmpty()) {
+                VaIconButton(onClick = { viewModel.setSearchQuery("") }) {
+                    Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.btn_clear))
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(tokens.smallRadius)
+    )
+}
+
+@Composable
+private fun HomeSmartDownloaderSection(
+    viewModel: HomeViewModel,
+    onScheduleOption: (AnalyzedMedia, MediaFormatOption) -> Unit
+) {
+    val context = LocalContext.current
+    val tokens = LocalVaTokens.current
+    val urlInput by viewModel.urlInput.collectAsStateWithLifecycle()
+    val batchMode by viewModel.batchMode.collectAsStateWithLifecycle()
+    val analysisState by viewModel.analysisState.collectAsStateWithLifecycle()
+
+    VaCard(highlighted = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.smart_downloader_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.smart_downloader_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = !batchMode,
+                onClick = { viewModel.setBatchMode(false) },
+                label = { Text(stringResource(R.string.mode_single_link)) },
+                modifier = Modifier.testTag("single_mode_chip")
+            )
+            FilterChip(
+                selected = batchMode,
+                onClick = { viewModel.setBatchMode(true) },
+                label = { Text(stringResource(R.string.mode_batch_links)) },
+                modifier = Modifier.testTag("batch_mode_chip")
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = urlInput,
+            onValueChange = viewModel::onUrlChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .let { if (batchMode) it.height(112.dp) else it }
+                .testTag("url_input_field"),
+            placeholder = {
+                Text(
+                    if (batchMode) stringResource(R.string.batch_url_hint)
+                    else stringResource(R.string.url_hint)
+                )
+            },
+            singleLine = !batchMode,
+            maxLines = if (batchMode) 5 else 1,
+            shape = RoundedCornerShape(tokens.smallRadius),
+            trailingIcon = {
+                Row {
+                    VaIconButton(
+                        onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                            if (clip.isNotBlank()) viewModel.onUrlChange(clip)
+                        },
+                        modifier = Modifier.testTag("paste_url_btn")
+                    ) {
+                        Icon(Icons.Rounded.ContentPaste, contentDescription = stringResource(R.string.btn_paste), tint = tokens.iconTint)
+                    }
+                    if (urlInput.isNotEmpty()) {
+                        VaIconButton(
+                            onClick = { viewModel.clearAnalysis() },
+                            modifier = Modifier.testTag("clear_url_btn")
+                        ) {
+                            Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.btn_clear))
+                        }
+                    }
+                }
+            }
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        VaPrimaryButton(
+            text = if (batchMode) stringResource(R.string.btn_process_batch) else stringResource(R.string.btn_process_link),
+            icon = Icons.Rounded.Download,
+            enabled = urlInput.isNotBlank() && analysisState !is UiState.Loading,
+            onClick = {
+                if (batchMode) viewModel.processBatchUrls() else viewModel.analyzeSingleLink()
+            },
+            testTag = "process_link_btn",
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        AnimatedVisibility(visible = analysisState !is UiState.Idle) {
+            Column(modifier = Modifier.padding(top = 14.dp)) {
+                when (val st = analysisState) {
+                    UiState.Loading -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+                            Text(stringResource(R.string.analyzing_link), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    is UiState.Error -> {
+                        VaCard(
+                            contentPadding = PaddingValues(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = tokens.danger)
+                                Spacer(Modifier.width(8.dp))
+                                Text(st.message, color = tokens.danger, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                    is UiState.Success -> {
+                        AnalyzedMediaPreview(
+                            media = st.data,
+                            onDownloadOption = { opt -> viewModel.enqueueAnalyzedOption(st.data, opt, 0L) },
+                            onScheduleOption = { opt -> onScheduleOption(st.data, opt) }
+                        )
+                    }
+                    UiState.Idle -> {}
+                }
+            }
+        }
+    }
+}
+
+private data class HomeQuickAccessItem(
+    val key: String,
+    val label: String,
+    val icon: ImageVector,
+    val filterCat: MediaCategory? = null,
+    val onClick: () -> Unit
+)
+
+@Composable
+private fun HomeQuickAccessSection(
+    viewModel: HomeViewModel,
+    onOpenFileManager: () -> Unit,
+    onOpenMediaStudio: () -> Unit,
+    onOpenVault: () -> Unit,
+    onOpenStorageAnalyzer: () -> Unit,
+    onOpenBrowser: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenNotifications: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val filterCategory by viewModel.filterCategory.collectAsStateWithLifecycle()
+
+    val videoLabel = stringResource(R.string.qa_video_dl)
+    val audioLabel = stringResource(R.string.qa_audio_dl)
+    val imageLabel = stringResource(R.string.qa_image_dl)
+    val fmLabel = stringResource(R.string.qa_file_manager)
+    val studioLabel = stringResource(R.string.qa_media_studio)
+    val vaultLabel = stringResource(R.string.qa_private_vault)
+    val storageLabel = stringResource(R.string.qa_storage_analyzer)
+    val browserLabel = stringResource(R.string.qa_browser)
+    val historyLabel = stringResource(R.string.qa_history)
+    val notifsLabel = stringResource(R.string.qa_notifications)
+
+    val quickItems = remember(
+        videoLabel, audioLabel, imageLabel, fmLabel, studioLabel,
+        vaultLabel, storageLabel, browserLabel, historyLabel, notifsLabel
+    ) {
+        listOf(
+            HomeQuickAccessItem("video", videoLabel, Icons.Rounded.VideoFile, MediaCategory.VIDEO) {
+                viewModel.setFilterCategory(if (viewModel.filterCategory.value == MediaCategory.VIDEO) null else MediaCategory.VIDEO)
+            },
+            HomeQuickAccessItem("audio", audioLabel, Icons.Rounded.AudioFile, MediaCategory.AUDIO) {
+                viewModel.setFilterCategory(if (viewModel.filterCategory.value == MediaCategory.AUDIO) null else MediaCategory.AUDIO)
+            },
+            HomeQuickAccessItem("image", imageLabel, Icons.Rounded.Image, MediaCategory.IMAGE) {
+                viewModel.setFilterCategory(if (viewModel.filterCategory.value == MediaCategory.IMAGE) null else MediaCategory.IMAGE)
+            },
+            HomeQuickAccessItem("fm", fmLabel, Icons.Rounded.Folder, onClick = onOpenFileManager),
+            HomeQuickAccessItem("studio", studioLabel, Icons.Rounded.AutoFixHigh, onClick = onOpenMediaStudio),
+            HomeQuickAccessItem("vault", vaultLabel, Icons.Rounded.Lock, onClick = onOpenVault),
+            HomeQuickAccessItem("storage", storageLabel, Icons.Rounded.Storage, onClick = onOpenStorageAnalyzer),
+            HomeQuickAccessItem("browser", browserLabel, Icons.Rounded.Language, onClick = onOpenBrowser),
+            HomeQuickAccessItem("history", historyLabel, Icons.Rounded.History, onClick = onOpenHistory),
+            HomeQuickAccessItem("notifs", notifsLabel, Icons.Rounded.Notifications, onClick = onOpenNotifications)
+        )
+    }
+
+    Column {
+        VaSectionTitle(title = stringResource(R.string.section_quick_access))
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(quickItems, key = { it.key }, contentType = { "quick_access" }) { item ->
+                val isSelectedFilter = item.filterCat != null && filterCategory == item.filterCat
+                VaCard(
+                    onClick = item.onClick,
+                    highlighted = isSelectedFilter,
+                    lightweight = true,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.width(88.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(item.icon, contentDescription = item.label, tint = tokens.iconTint, modifier = Modifier.size(26.dp))
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeStatsCard(viewModel: HomeViewModel) {
+    val tokens = LocalVaTokens.current
+    val activeCount by viewModel.activeCount.collectAsStateWithLifecycle()
+    val queueCount by viewModel.queueCount.collectAsStateWithLifecycle()
+    val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
+    val totalCompletedBytes by viewModel.totalCompletedBytes.collectAsStateWithLifecycle()
+
+    VaCard(lightweight = true) {
+        VaSectionTitle(title = stringResource(R.string.section_recent_activity))
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            StatMiniBlock(stringResource(R.string.stat_active), activeCount.toString(), tokens.primaryAccent, Modifier.weight(1f))
+            StatMiniBlock(stringResource(R.string.stat_queued), queueCount.toString(), tokens.warning, Modifier.weight(1f))
+            StatMiniBlock(stringResource(R.string.stat_completed), completedCount.toString(), tokens.success, Modifier.weight(1f))
+            StatMiniBlock(stringResource(R.string.stat_total_data), FormatUtils.formatBytes(totalCompletedBytes), tokens.tertiaryAccent, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun HomeDownloadsTabRow(viewModel: HomeViewModel) {
+    val tokens = LocalVaTokens.current
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val activeCount by viewModel.activeCount.collectAsStateWithLifecycle()
+    val queueCount by viewModel.queueCount.collectAsStateWithLifecycle()
+    val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
+    val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
+
+    val tabs = listOf(
+        DownloadManagerTab.ACTIVE to "${stringResource(R.string.tab_active)} ($activeCount)",
+        DownloadManagerTab.QUEUE to "${stringResource(R.string.tab_queue)} ($queueCount)",
+        DownloadManagerTab.COMPLETED to "${stringResource(R.string.tab_completed)} ($completedCount)",
+        DownloadManagerTab.FAILED to "${stringResource(R.string.tab_failed)} ($failedCount)"
+    )
+    TabRow(
+        selectedTabIndex = selectedTab.ordinal,
+        containerColor = tokens.cardSurface,
+        contentColor = tokens.primaryAccent,
+        modifier = Modifier.clip(RoundedCornerShape(tokens.smallRadius))
+    ) {
+        tabs.forEach { (tab, title) ->
+            Tab(
+                selected = selectedTab == tab,
+                onClick = { viewModel.selectTab(tab) },
+                text = {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                },
+                modifier = Modifier.testTag("dm_tab_${tab.name.lowercase()}")
+            )
+        }
     }
 }
 
@@ -884,10 +961,9 @@ private fun DownloadItemCard(
         (item.downloadedBytes.toFloat() / item.totalBytes.toFloat()).coerceIn(0f, 1f)
     } else if (item.status == "COMPLETED") 1f else 0f
 
-    val animatedProgress by animateFloatAsState(targetValue = progress, label = "dl_progress")
     val percentInt = (progress * 100).toInt()
 
-    VaCard(contentPadding = PaddingValues(14.dp)) {
+    VaCard(lightweight = true, contentPadding = PaddingValues(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -959,7 +1035,7 @@ private fun DownloadItemCard(
         if (item.status in setOf("DOWNLOADING", "PAUSED", "QUEUED")) {
             Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
-                progress = { animatedProgress },
+                progress = { progress },
                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
                 color = tokens.primaryAccent,
                 trackColor = tokens.elevatedSurface
@@ -1033,6 +1109,7 @@ private fun ActionIconBtn(
 ) {
     VaIconButton(
         onClick = onClick,
+        animatePress = false,
         modifier = Modifier.size(48.dp)
     ) {
         Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))

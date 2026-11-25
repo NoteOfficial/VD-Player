@@ -168,6 +168,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _playbackUi = MutableStateFlow(PlaybackUiState())
     val playbackUi: StateFlow<PlaybackUiState> = _playbackUi.asStateFlow()
 
+    val currentPlayingUri: StateFlow<String> = _playbackUi
+        .map { it.currentUri }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     private val _musicQueue = MutableStateFlow<List<DeviceMediaItem>>(emptyList())
     val musicQueue: StateFlow<List<DeviceMediaItem>> = _musicQueue.asStateFlow()
 

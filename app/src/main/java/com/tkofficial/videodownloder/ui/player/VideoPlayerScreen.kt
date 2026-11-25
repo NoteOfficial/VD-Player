@@ -154,7 +154,6 @@ fun VideoPlayerScreen(
     var currentTitle by remember { mutableStateOf(title) }
     val bookmarks by playerViewModel.observeVideoBookmarks(currentUri).collectAsStateWithLifecycle(emptyList())
     var isPlaying by remember { mutableStateOf(true) }
-    var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isLocked by remember { mutableStateOf(false) }
@@ -271,16 +270,16 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Position ticker + A-B Repeat enforcement
-    LaunchedEffect(exoPlayer) {
-        while (true) {
-            delay(300L)
-            positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-            durationMs = exoPlayer.duration.coerceAtLeast(0L)
-            val a = abRepeatA
-            val b = abRepeatB
-            if (a != null && b != null && b > a && positionMs >= b) {
-                exoPlayer.seekTo(a)
+    // A-B Repeat enforcement (runs only when both A and B loop points are active)
+    LaunchedEffect(exoPlayer, abRepeatA, abRepeatB) {
+        val a = abRepeatA
+        val b = abRepeatB
+        if (a != null && b != null && b > a) {
+            while (true) {
+                delay(250L)
+                if (exoPlayer.currentPosition >= b) {
+                    exoPlayer.seekTo(a)
+                }
             }
         }
     }
@@ -424,50 +423,15 @@ fun VideoPlayerScreen(
             else -> Modifier.fillMaxSize()
         }
 
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    player = exoPlayer
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    subtitleView?.setStyle(
-                        CaptionStyleCompat(
-                            settings.videoSubtitleColorHex.toInt(),
-                            Color.Black.copy(alpha = settings.videoSubtitleBgAlpha).toArgb(),
-                            Color.Transparent.toArgb(),
-                            CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                            Color.Black.toArgb(),
-                            null
-                        )
-                    )
-                    subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, settings.videoSubtitleFontSp)
-                    playerViewRef = this
-                }
-            },
-            update = { view ->
-                view.player = exoPlayer
-                view.subtitleView?.setStyle(
-                    CaptionStyleCompat(
-                        settings.videoSubtitleColorHex.toInt(),
-                        Color.Black.copy(alpha = settings.videoSubtitleBgAlpha).toArgb(),
-                        Color.Transparent.toArgb(),
-                        CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                        Color.Black.toArgb(),
-                        null
-                    )
-                )
-                view.subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, settings.videoSubtitleFontSp)
-                view.resizeMode = when (aspectMode) {
-                    AspectRatioMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    AspectRatioMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    AspectRatioMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    AspectRatioMode.RATIO_16_9, AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                }
-            },
-            modifier = viewportModifier.graphicsLayer(scaleX = zoomScale, scaleY = zoomScale)
+        VideoPlayerSurface(
+            exoPlayer = exoPlayer,
+            aspectMode = aspectMode,
+            zoomScale = zoomScale,
+            subtitleColorHex = settings.videoSubtitleColorHex,
+            subtitleBgAlpha = settings.videoSubtitleBgAlpha,
+            subtitleFontSp = settings.videoSubtitleFontSp,
+            onPlayerViewReady = { playerViewRef = it },
+            modifier = viewportModifier
         )
 
         // Gesture Feedback Chip
@@ -584,15 +548,10 @@ fun VideoPlayerScreen(
                                 .background(Color.Black.copy(alpha = 0.6f))
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(FormatUtils.formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                                Slider(
-                                    value = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
-                                    onValueChange = { exoPlayer.seekTo((it * durationMs).toLong()) },
-                                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                                )
-                                Text(FormatUtils.formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                            }
+                            VideoSeekBarRow(
+                                exoPlayer = exoPlayer,
+                                durationMs = durationMs
+                            )
 
                             Row(
                                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -631,18 +590,19 @@ fun VideoPlayerScreen(
                                 }
                                 IconButton(onClick = {
                                     // A-B Repeat state machine
+                                    val curPos = exoPlayer.currentPosition.coerceAtLeast(0L)
                                     when {
                                         abRepeatA == null -> {
-                                            abRepeatA = positionMs
+                                            abRepeatA = curPos
                                             gestureBanner = LocaleHelper.getLocalizedString(
                                                 context,
                                                 settings.language,
                                                 R.string.vp_loop_a,
-                                                FormatUtils.formatDuration(positionMs)
+                                                FormatUtils.formatDuration(curPos)
                                             )
                                         }
                                         abRepeatB == null -> {
-                                            abRepeatB = positionMs
+                                            abRepeatB = curPos
                                             gestureBanner = LocaleHelper.getLocalizedString(context, settings.language, R.string.vp_loop_ab_active)
                                         }
                                         else -> {
@@ -767,6 +727,7 @@ fun VideoPlayerScreen(
     }
 
     if (showBookmarksDialog) {
+        val bookmarkPosMs = remember(showBookmarksDialog) { exoPlayer.currentPosition.coerceAtLeast(0L) }
         AlertDialog(
             onDismissRequest = { showBookmarksDialog = false },
             title = { Text(stringResource(R.string.vp_bookmarks_title)) },
@@ -774,11 +735,12 @@ fun VideoPlayerScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            playerViewModel.addVideoBookmark(currentUri, FormatUtils.formatDuration(positionMs), positionMs)
+                            val nowPos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                            playerViewModel.addVideoBookmark(currentUri, FormatUtils.formatDuration(nowPos), nowPos)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(stringResource(R.string.vp_add_bookmark_at, FormatUtils.formatDuration(positionMs)))
+                        Text(stringResource(R.string.vp_add_bookmark_at, FormatUtils.formatDuration(bookmarkPosMs)))
                     }
                     bookmarks.forEach { bm ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -797,6 +759,90 @@ fun VideoPlayerScreen(
             },
             confirmButton = { Button(onClick = { showBookmarksDialog = false }) { Text(stringResource(R.string.btn_close)) } }
         )
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun VideoPlayerSurface(
+    exoPlayer: ExoPlayer,
+    aspectMode: AspectRatioMode,
+    zoomScale: Float,
+    subtitleColorHex: Long,
+    subtitleBgAlpha: Float,
+    subtitleFontSp: Float,
+    onPlayerViewReady: (PlayerView) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val captionStyle = remember(subtitleColorHex, subtitleBgAlpha) {
+        CaptionStyleCompat(
+            subtitleColorHex.toInt(),
+            Color.Black.copy(alpha = subtitleBgAlpha).toArgb(),
+            Color.Transparent.toArgb(),
+            CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+            Color.Black.toArgb(),
+            null
+        )
+    }
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                useController = false
+                player = exoPlayer
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                subtitleView?.setStyle(captionStyle)
+                subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, subtitleFontSp)
+                onPlayerViewReady(this)
+            }
+        },
+        update = { view ->
+            if (view.player !== exoPlayer) {
+                view.player = exoPlayer
+            }
+            val appliedKey = Triple(captionStyle, subtitleFontSp, aspectMode)
+            if (view.tag != appliedKey) {
+                view.subtitleView?.setStyle(captionStyle)
+                view.subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, subtitleFontSp)
+                view.resizeMode = when (aspectMode) {
+                    AspectRatioMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    AspectRatioMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    AspectRatioMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    AspectRatioMode.RATIO_16_9, AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                }
+                view.tag = appliedKey
+            }
+        },
+        modifier = modifier.graphicsLayer(scaleX = zoomScale, scaleY = zoomScale)
+    )
+}
+
+@Composable
+private fun VideoSeekBarRow(
+    exoPlayer: ExoPlayer,
+    durationMs: Long
+) {
+    var posMs by remember { mutableLongStateOf(exoPlayer.currentPosition.coerceAtLeast(0L)) }
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            posMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            delay(350L)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(FormatUtils.formatDuration(posMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
+        Slider(
+            value = if (durationMs > 0) (posMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+            onValueChange = {
+                val target = (it * durationMs).toLong()
+                posMs = target
+                exoPlayer.seekTo(target)
+            },
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+        )
+        Text(FormatUtils.formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
     }
 }
 

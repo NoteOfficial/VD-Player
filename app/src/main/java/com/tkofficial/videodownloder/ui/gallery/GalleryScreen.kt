@@ -476,6 +476,7 @@ fun GalleryScreen(
                                             albumCoverTarget = album
                                             coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                         },
+                                        animatePress = false,
                                         modifier = Modifier.size(32.dp)
                                     ) {
                                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.gallery_album_cover), modifier = Modifier.size(16.dp))
@@ -509,6 +510,7 @@ fun GalleryScreen(
             }
         } else if (isGrid) {
             val gridItemShape = remember(tokens.smallRadius) { RoundedCornerShape(tokens.smallRadius) }
+            val hasAnySelection = selectedIds.isNotEmpty()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(gridColumns.coerceIn(2, 5)),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -517,83 +519,23 @@ fun GalleryScreen(
             ) {
                 items(mediaList, key = { it.id }, contentType = { it.mediaType }) { item ->
                     val isSelected = selectedIds.contains(item.id)
-                    Box(
-                        modifier = Modifier
-                            .aspectRatio(1f)
-                            .clip(gridItemShape)
-                            .border(
-                                width = if (isSelected) 2.5.dp else 1.dp,
-                                color = if (isSelected) tokens.primaryAccent else tokens.borderSubtle,
-                                shape = gridItemShape
-                            )
-                            .clickable {
-                                if (selectedIds.isNotEmpty()) {
-                                    viewModel.toggleSelection(item.id)
-                                } else if (item.mediaType == "VIDEO") {
-                                    onPlayVideo(mediaPlayUri(item), item.title)
-                                } else {
-                                    viewerItem = item
-                                }
+                    GalleryGridTile(
+                        item = item,
+                        isSelected = isSelected,
+                        hasAnySelection = hasAnySelection,
+                        gridItemShape = gridItemShape,
+                        showFileNames = showFileNames,
+                        onTileClick = {
+                            if (hasAnySelection) {
+                                viewModel.toggleSelection(item.id)
+                            } else if (item.mediaType == "VIDEO") {
+                                onPlayVideo(mediaPlayUri(item), item.title)
+                            } else {
+                                viewerItem = item
                             }
-                    ) {
-                        val thumbModel = remember(item.filePath, item.contentUri, item.id) {
-                            ImageRequest.Builder(context)
-                                .data(mediaThumbData(item))
-                                .size(320)
-                                .crossfade(false)
-                                .build()
-                        }
-                        AsyncImage(
-                            model = thumbModel,
-                            contentDescription = item.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        if (item.mediaType == "VIDEO") {
-                            Icon(
-                                Icons.Rounded.PlayCircle,
-                                contentDescription = stringResource(R.string.gallery_videos),
-                                tint = Color.White,
-                                modifier = Modifier.align(Alignment.Center).size(36.dp)
-                            )
-                        }
-                        if (item.isFavorite) {
-                            Icon(
-                                Icons.Rounded.Favorite,
-                                contentDescription = stringResource(R.string.gallery_favorite),
-                                tint = tokens.danger,
-                                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp)
-                            )
-                        }
-                        VaIconButton(
-                            onClick = { viewModel.toggleSelection(item.id) },
-                            modifier = Modifier.align(Alignment.TopStart).size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.CheckCircle,
-                                contentDescription = stringResource(R.string.gallery_select),
-                                tint = if (isSelected) tokens.primaryAccent else Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        if (showFileNames) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .background(Color.Black.copy(alpha = 0.55f))
-                                    .padding(horizontal = 6.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = item.title,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
+                        },
+                        onToggleSelection = { viewModel.toggleSelection(item.id) }
+                    )
                 }
             }
         } else {
@@ -603,52 +545,19 @@ fun GalleryScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(mediaList, key = { it.id }, contentType = { it.mediaType }) { item ->
-                    VaCard(
-                        onClick = {
+                    GalleryListItem(
+                        item = item,
+                        listThumbShape = listThumbShape,
+                        onOpen = {
                             if (item.mediaType == "VIDEO") {
                                 onPlayVideo(mediaPlayUri(item), item.title)
                             } else {
                                 viewerItem = item
                             }
                         },
-                        lightweight = true,
-                        contentPadding = PaddingValues(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val listThumb = remember(item.filePath, item.contentUri, item.id) {
-                                ImageRequest.Builder(context)
-                                    .data(mediaThumbData(item))
-                                    .size(200)
-                                    .crossfade(false)
-                                    .build()
-                            }
-                            AsyncImage(
-                                model = listThumb,
-                                contentDescription = item.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(56.dp).clip(listThumbShape)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    "${item.mediaType} • ${FormatUtils.formatBytes(item.sizeBytes)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            VaIconButton(onClick = { viewModel.toggleFavorite(item) }) {
-                                Icon(
-                                    if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                    contentDescription = stringResource(R.string.gallery_favorite),
-                                    tint = if (item.isFavorite) tokens.danger else tokens.iconTint
-                                )
-                            }
-                            VaIconButton(onClick = { viewModel.shareItem(item) }) {
-                                Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
-                            }
-                        }
-                    }
+                        onToggleFavorite = { viewModel.toggleFavorite(item) },
+                        onShare = { viewModel.shareItem(item) }
+                    )
                 }
             }
         }
@@ -931,6 +840,142 @@ private fun FullscreenImageViewerDialog(
                 VaIconButton(onClick = onDelete) {
                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = Color(0xFFFF6B6B))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GalleryGridTile(
+    item: DownloadedMediaEntity,
+    isSelected: Boolean,
+    hasAnySelection: Boolean,
+    gridItemShape: RoundedCornerShape,
+    showFileNames: Boolean,
+    onTileClick: () -> Unit,
+    onToggleSelection: () -> Unit
+) {
+    val context = LocalContext.current
+    val tokens = LocalVaTokens.current
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(gridItemShape)
+            .border(
+                width = if (isSelected) 2.5.dp else 1.dp,
+                color = if (isSelected) tokens.primaryAccent else tokens.borderSubtle,
+                shape = gridItemShape
+            )
+            .clickable(onClick = onTileClick)
+    ) {
+        val thumbModel = remember(item.filePath, item.contentUri, item.id) {
+            ImageRequest.Builder(context)
+                .data(mediaThumbData(item))
+                .size(320)
+                .crossfade(false)
+                .build()
+        }
+        AsyncImage(
+            model = thumbModel,
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (item.mediaType == "VIDEO") {
+            Icon(
+                Icons.Rounded.PlayCircle,
+                contentDescription = stringResource(R.string.gallery_videos),
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(36.dp)
+            )
+        }
+        if (item.isFavorite) {
+            Icon(
+                Icons.Rounded.Favorite,
+                contentDescription = stringResource(R.string.gallery_favorite),
+                tint = tokens.danger,
+                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp)
+            )
+        }
+        VaIconButton(
+            onClick = onToggleSelection,
+            animatePress = false,
+            modifier = Modifier.align(Alignment.TopStart).size(36.dp)
+        ) {
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = stringResource(R.string.gallery_select),
+                tint = if (isSelected) tokens.primaryAccent else Color.White.copy(alpha = if (hasAnySelection) 0.75f else 0.6f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        if (showFileNames) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = item.title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GalleryListItem(
+    item: DownloadedMediaEntity,
+    listThumbShape: RoundedCornerShape,
+    onOpen: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onShare: () -> Unit
+) {
+    val context = LocalContext.current
+    val tokens = LocalVaTokens.current
+    VaCard(
+        onClick = onOpen,
+        lightweight = true,
+        contentPadding = PaddingValues(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val listThumb = remember(item.filePath, item.contentUri, item.id) {
+                ImageRequest.Builder(context)
+                    .data(mediaThumbData(item))
+                    .size(200)
+                    .crossfade(false)
+                    .build()
+            }
+            AsyncImage(
+                model = listThumb,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(56.dp).clip(listThumbShape)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "${item.mediaType} • ${FormatUtils.formatBytes(item.sizeBytes)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
+                Icon(
+                    if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = stringResource(R.string.gallery_favorite),
+                    tint = if (item.isFavorite) tokens.danger else tokens.iconTint
+                )
+            }
+            VaIconButton(onClick = onShare, animatePress = false) {
+                Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
             }
         }
     }

@@ -24,20 +24,29 @@ import coil.size.Dimension
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import java.io.File
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 
 @Immutable
 data class FastMediaThumb(
     val uriString: String,
     val filePath: String = "",
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    val isAudio: Boolean = false,
+    val fallbackArtUri: String? = null
 )
 
 class FastMediaThumbKeyer : Keyer<FastMediaThumb> {
     override fun key(data: FastMediaThumb, options: Options): String {
         val w = (options.size.width as? Dimension.Pixels)?.px ?: 320
         val h = (options.size.height as? Dimension.Pixels)?.px ?: 320
-        return "fmt:${data.isVideo}:${w}x${h}:${data.uriString}"
+        val mode = when {
+            data.isVideo -> "v"
+            data.isAudio -> "a"
+            else -> "i"
+        }
+        return "fmt:$mode:${w}x${h}:${data.uriString}:${data.fallbackArtUri.orEmpty()}"
     }
 }
 
@@ -46,7 +55,24 @@ class FastMediaThumbFetcher(
     private val options: Options
 ) : Fetcher {
 
+    companion object {
+        private const val MAX_NEGATIVE_CACHE = 2048
+        private val failedThumbCache: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
+
+        private fun markFailed(cacheKey: String) {
+            if (failedThumbCache.size >= MAX_NEGATIVE_CACHE) {
+                failedThumbCache.clear()
+            }
+            failedThumbCache.add(cacheKey)
+        }
+    }
+
     override suspend fun fetch(): FetchResult {
+        val cacheKey = "${data.isVideo}:${data.isAudio}:${data.uriString}:${data.fallbackArtUri.orEmpty()}"
+        if (failedThumbCache.contains(cacheKey)) {
+            throw IllegalStateException("Cached missing thumbnail for ${data.uriString}")
+        }
+
         val context = options.context
         val reqW = (options.size.width as? Dimension.Pixels)?.px?.coerceIn(96, 512) ?: 320
         val reqH = (options.size.height as? Dimension.Pixels)?.px?.coerceIn(96, 512) ?: 320
@@ -57,7 +83,7 @@ class FastMediaThumbFetcher(
             val uri = Uri.parse(data.uriString)
             var bitmap: Bitmap? = null
 
-            // 1. OS MediaStore pre-cached thumbnail (API 29+) — ~1-3ms for both photos and videos
+            // 1. OS MediaStore pre-cached thumbnail (API 29+) — ~1-3ms for photos, videos, and audio
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                 uri.scheme == "content" &&
                 uri.authority == "media"
@@ -73,36 +99,48 @@ class FastMediaThumbFetcher(
 
             if (signal.isCanceled) throw CancellationException("Thumbnail load cancelled")
 
-            // 2. Local file fast path (ThumbnailUtils for videos, subsampled RGB_565 for images)
-            if (bitmap == null) {
-                val localPath = data.filePath.ifBlank {
-                    if (uri.scheme == "file") uri.path.orEmpty() else ""
+            if (data.isAudio) {
+                // Fast fallback to legacy album art URI if present; skip heavy MediaMetadataRetriever on scroll
+                if (bitmap == null && !data.fallbackArtUri.isNullOrBlank()) {
+                    bitmap = decodeSampledImageUri(context, Uri.parse(data.fallbackArtUri), reqW, reqH)
                 }
-                if (localPath.isNotBlank()) {
-                    val file = File(localPath)
-                    if (file.exists()) {
-                        bitmap = if (data.isVideo) {
-                            decodeLocalVideoThumb(file, reqW, reqH, signal)
-                        } else {
-                            decodeSampledImageFile(localPath, reqW, reqH)
+            } else {
+                // 2. Local file fast path (ThumbnailUtils for videos, subsampled RGB_565 for images)
+                if (bitmap == null) {
+                    val localPath = data.filePath.ifBlank {
+                        if (uri.scheme == "file") uri.path.orEmpty() else ""
+                    }
+                    if (localPath.isNotBlank()) {
+                        val file = File(localPath)
+                        if (file.exists()) {
+                            bitmap = if (data.isVideo) {
+                                decodeLocalVideoThumb(file, reqW, reqH, signal)
+                            } else {
+                                decodeSampledImageFile(localPath, reqW, reqH)
+                            }
                         }
+                    }
+                }
+
+                if (signal.isCanceled) throw CancellationException("Thumbnail load cancelled")
+
+                // 3. Fallback for SAF / non-MediaStore content:// URIs or API < 29
+                if (bitmap == null) {
+                    bitmap = if (data.isVideo) {
+                        decodeVideoUriFallback(context, uri, reqW, reqH)
+                    } else {
+                        decodeSampledImageUri(context, uri, reqW, reqH)
                     }
                 }
             }
 
-            if (signal.isCanceled) throw CancellationException("Thumbnail load cancelled")
-
-            // 3. Fallback for SAF / non-MediaStore content:// URIs or API < 29
-            if (bitmap == null) {
-                bitmap = if (data.isVideo) {
-                    decodeVideoUriFallback(context, uri, reqW, reqH)
-                } else {
-                    decodeSampledImageUri(context, uri, reqW, reqH)
-                }
-            }
-
             val finalBitmap = bitmap
-                ?: throw IllegalStateException("Unable to decode thumbnail for ${data.uriString}")
+            if (finalBitmap == null) {
+                if (!signal.isCanceled) {
+                    markFailed(cacheKey)
+                }
+                throw IllegalStateException("Unable to decode thumbnail for ${data.uriString}")
+            }
 
             return DrawableResult(
                 drawable = finalBitmap.toDrawable(context.resources),

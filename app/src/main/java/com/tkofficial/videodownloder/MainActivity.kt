@@ -171,6 +171,8 @@ import com.tkofficial.videodownloder.ui.themes.ThemeStudioScreen
 import com.tkofficial.videodownloder.ui.vault.SecurityCenterScreen
 import com.tkofficial.videodownloder.ui.vault.VaultScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private data class TopLevelTab(
@@ -750,27 +752,54 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+private data class MiniBarMeta(
+    val title: String = "",
+    val artist: String = "",
+    val isPlaying: Boolean = false
+)
+
 @Composable
 private fun GlobalMiniMusicBarHost(
     playerViewModel: PlayerViewModel,
     onOpenPlayer: () -> Unit
 ) {
     val tokens = LocalVaTokens.current
-    val playbackUi by playerViewModel.playbackUi.collectAsStateWithLifecycle()
+    val meta by remember(playerViewModel) {
+        playerViewModel.playbackUi
+            .map { MiniBarMeta(it.currentTitle, it.currentArtist, it.isPlaying) }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = MiniBarMeta())
     AnimatedVisibility(
-        visible = playbackUi.currentTitle.isNotBlank(),
+        visible = meta.title.isNotBlank(),
         enter = fadeIn(tween(tokens.animDurationMs)),
         exit = fadeOut(tween(tokens.animDurationMs))
     ) {
         GlobalMiniMusicBar(
-            title = playbackUi.currentTitle,
-            artist = playbackUi.currentArtist,
-            isPlaying = playbackUi.isPlaying,
-            positionMs = playbackUi.positionMs,
-            durationMs = playbackUi.durationMs,
+            title = meta.title,
+            artist = meta.artist,
+            isPlaying = meta.isPlaying,
             onOpenPlayer = onOpenPlayer,
             onTogglePlayPause = playerViewModel::togglePlayPause,
-            onSkipNext = playerViewModel::skipNext
+            onSkipNext = playerViewModel::skipNext,
+            progressContent = { GlobalMiniMusicProgress(playerViewModel) }
+        )
+    }
+}
+
+@Composable
+private fun GlobalMiniMusicProgress(playerViewModel: PlayerViewModel) {
+    val tokens = LocalVaTokens.current
+    val fraction by remember(playerViewModel) {
+        playerViewModel.playbackUi
+            .map { if (it.durationMs > 0L) (it.positionMs.toFloat() / it.durationMs.toFloat()).coerceIn(0f, 1f) else -1f }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = -1f)
+
+    if (fraction >= 0f) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = tokens.primaryAccent
         )
     }
 }
@@ -780,16 +809,16 @@ private fun GlobalMiniMusicBar(
     title: String,
     artist: String,
     isPlaying: Boolean,
-    positionMs: Long,
-    durationMs: Long,
     onOpenPlayer: () -> Unit,
     onTogglePlayPause: () -> Unit,
-    onSkipNext: () -> Unit
+    onSkipNext: () -> Unit,
+    progressContent: @Composable () -> Unit
 ) {
     val tokens = LocalVaTokens.current
     VaCard(
         onClick = onOpenPlayer,
         highlighted = true,
+        lightweight = true,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -818,24 +847,18 @@ private fun GlobalMiniMusicBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                VaIconButton(onClick = onTogglePlayPause) {
+                VaIconButton(onClick = onTogglePlayPause, animatePress = false) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = stringResource(R.string.player_play_pause),
                         tint = tokens.primaryAccent
                     )
                 }
-                VaIconButton(onClick = onSkipNext) {
+                VaIconButton(onClick = onSkipNext, animatePress = false) {
                     Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
                 }
             }
-            if (durationMs > 0L) {
-                LinearProgressIndicator(
-                    progress = { (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
-                    color = tokens.primaryAccent
-                )
-            }
+            progressContent()
         }
     }
 }

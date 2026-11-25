@@ -17,11 +17,16 @@ import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.models.MediaFormatOption
 import com.tkofficial.videodownloder.models.UiState
 import com.tkofficial.videodownloder.utilities.FormatUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -61,6 +66,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val completedCount: StateFlow<Int> = downloadDao.observeCompletedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val activeCount: StateFlow<Int> = activeDownloads
+        .map { it.size }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val queueCount: StateFlow<Int> = queuedDownloads
+        .map { it.size }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val failedCount: StateFlow<Int> = failedDownloads
+        .map { it.size }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val unreadNotifications: StateFlow<Int> = container.database.systemDao().observeUnreadNotificationCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
@@ -78,6 +98,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _filterCategory = MutableStateFlow<MediaCategory?>(null)
     val filterCategory: StateFlow<MediaCategory?> = _filterCategory.asStateFlow()
+
+    private val tabListFlow = combine(
+        _selectedTab,
+        activeDownloads,
+        queuedDownloads,
+        completedDownloads,
+        failedDownloads
+    ) { tab, active, queue, completed, failed ->
+        when (tab) {
+            DownloadManagerTab.ACTIVE -> active
+            DownloadManagerTab.QUEUE -> queue
+            DownloadManagerTab.COMPLETED -> completed
+            DownloadManagerTab.FAILED -> failed
+        }
+    }
+
+    val displayedDownloads: StateFlow<List<DownloadEntity>> = combine(
+        tabListFlow,
+        _searchQuery,
+        _filterCategory
+    ) { list, query, category ->
+        if (query.isBlank() && category == null) {
+            list
+        } else {
+            list.filter { item ->
+                val matchesSearch = query.isBlank() ||
+                    item.fileName.contains(query, true) ||
+                    item.platform.contains(query, true)
+                val matchesCategory = category == null || item.mediaType == category.name
+                matchesSearch && matchesCategory
+            }
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _analysisState = MutableStateFlow<UiState<AnalyzedMedia>>(UiState.Idle)
     val analysisState: StateFlow<UiState<AnalyzedMedia>> = _analysisState.asStateFlow()

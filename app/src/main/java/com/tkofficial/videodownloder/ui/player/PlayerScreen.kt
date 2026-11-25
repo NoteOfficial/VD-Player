@@ -144,9 +144,6 @@ fun PlayerScreen(
     val musicGroupEntries by viewModel.musicGroupEntries.collectAsStateWithLifecycle()
     val filteredSongs by viewModel.filteredSongs.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
-    val playbackUi by viewModel.playbackUi.collectAsStateWithLifecycle()
-    val musicQueue by viewModel.musicQueue.collectAsStateWithLifecycle()
-    val eqState by viewModel.eqState.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -312,7 +309,7 @@ fun PlayerScreen(
                     selectedTab = musicTab,
                     hasAudioPerm = hasAudioPerm,
                     playlists = playlists.filter { it.mediaCategory == "AUDIO" },
-                    currentPlayingUri = playbackUi.currentUri,
+                    currentPlayingUriFlow = viewModel.currentPlayingUri,
                     onRequestAudioPerm = { audioPermLauncher.launch(audioPermission) },
                     onOpenAppSettings = { context.openAppDetailsSettings() },
                     onPickAudioFiles = { audioFilePicker.launch(arrayOf("audio/*")) },
@@ -328,217 +325,29 @@ fun PlayerScreen(
             }
         }
 
-        // Persistent Mini Music Player Bar when audio session is active
-        AnimatedVisibility(visible = playbackUi.currentTitle.isNotBlank()) {
-            VaCard(
-                onClick = { showFullMusicSheet = true },
-                highlighted = true,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .testTag("mini_player_bar")
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(tokens.elevatedSurface),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
-                            playbackUi.currentAlbumArtUri?.let { art ->
-                                val artReq = remember(art) {
-                                    ImageRequest.Builder(context)
-                                        .data(Uri.parse(art))
-                                        .size(160)
-                                        .build()
-                                }
-                                AsyncImage(
-                                    model = artReq,
-                                    contentDescription = playbackUi.currentTitle,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(playbackUi.currentTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                playbackUi.currentArtist.ifBlank { stringResource(R.string.app_name) },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                        VaIconButton(onClick = viewModel::skipPrevious) {
-                            Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev))
-                        }
-                        VaIconButton(onClick = viewModel::togglePlayPause) {
-                            Icon(
-                                if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = stringResource(R.string.player_play_pause),
-                                tint = tokens.primaryAccent
-                            )
-                        }
-                        VaIconButton(onClick = viewModel::skipNext) {
-                            Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
-                        }
-                    }
-                    if (playbackUi.durationMs > 0L) {
-                        Spacer(Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { (playbackUi.positionMs.toFloat() / playbackUi.durationMs.toFloat()).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
-                            color = tokens.primaryAccent
-                        )
-                    }
-                }
-            }
-        }
+        // Persistent Mini Music Player Bar when audio session is active (isolated collector)
+        PlayerMiniBarHost(
+            viewModel = viewModel,
+            onExpand = { showFullMusicSheet = true }
+        )
     }
 
     // Full Music Player Bottom Sheet with Visualizer, Equalizer, Sleep Timer, Queue, Lyrics
     if (showFullMusicSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showFullMusicSheet = false },
-            containerColor = tokens.cardSurface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(160.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(tokens.heroGradient),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Album, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(80.dp))
-                    playbackUi.currentAlbumArtUri?.let { art ->
-                        val sheetArtReq = remember(art) {
-                            ImageRequest.Builder(context)
-                                .data(Uri.parse(art))
-                                .size(512)
-                                .build()
-                        }
-                        AsyncImage(
-                            model = sheetArtReq,
-                            contentDescription = playbackUi.currentTitle,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Text(playbackUi.currentTitle, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(playbackUi.currentArtist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                if (settings.musicVisualizerEnabled) {
-                    Spacer(Modifier.height(12.dp))
-                    MusicVisualizerCanvas(isPlaying = playbackUi.isPlaying, modifier = Modifier.fillMaxWidth().height(36.dp))
-                }
-
-                Spacer(Modifier.height(10.dp))
-                val dur = playbackUi.durationMs.coerceAtLeast(1L)
-                Slider(
-                    value = (playbackUi.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f),
-                    onValueChange = { frac -> viewModel.seekTo((frac * dur).toLong()) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(FormatUtils.formatDuration(playbackUi.positionMs), style = MaterialTheme.typography.labelSmall)
-                    Text(FormatUtils.formatDuration(playbackUi.durationMs), style = MaterialTheme.typography.labelSmall)
-                }
-
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    VaIconButton(onClick = viewModel::toggleShuffle) {
-                        Icon(
-                            Icons.Rounded.Shuffle,
-                            contentDescription = stringResource(R.string.player_shuffle),
-                            tint = if (playbackUi.shuffleEnabled) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    VaIconButton(onClick = viewModel::skipPrevious) {
-                        Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev), modifier = Modifier.size(34.dp))
-                    }
-                    val playInteraction = remember { MutableInteractionSource() }
-                    Box(
-                        modifier = Modifier
-                            .size(62.dp)
-                            .vaBouncePress(playInteraction, 0.9f)
-                            .clip(CircleShape)
-                            .background(tokens.heroGradient)
-                            .clickable(
-                                interactionSource = playInteraction,
-                                indication = androidx.compose.foundation.LocalIndication.current,
-                                onClick = viewModel::togglePlayPause
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = stringResource(R.string.player_play_pause),
-                            tint = androidx.compose.ui.graphics.Color.White,
-                            modifier = Modifier.size(34.dp)
-                        )
-                    }
-                    VaIconButton(onClick = viewModel::skipNext) {
-                        Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next), modifier = Modifier.size(34.dp))
-                    }
-                    VaIconButton(onClick = viewModel::cycleRepeatMode) {
-                        val repIcon = if (playbackUi.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
-                        val active = playbackUi.repeatMode != Player.REPEAT_MODE_OFF
-                        Icon(repIcon, contentDescription = stringResource(R.string.player_repeat), tint = if (active) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    VaOutlinedButton(onClick = { showEqDialog = true }) {
-                        Icon(Icons.Rounded.Equalizer, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.player_equalizer))
-                    }
-                    VaOutlinedButton(onClick = { showSleepDialog = true }) {
-                        Icon(Icons.Rounded.Bedtime, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        val stText = if (playbackUi.sleepTimerRemainingSec > 0) stringResource(R.string.mins_short, playbackUi.sleepTimerRemainingSec / 60) else stringResource(R.string.player_sleep_timer)
-                        Text(stText)
-                    }
-                    VaOutlinedButton(onClick = { showQueueDialog = true }) {
-                        Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.player_queue_count, musicQueue.size))
-                    }
-                    VaOutlinedButton(onClick = { lrcPicker.launch(arrayOf("text/*", "application/octet-stream")) }) {
-                        Icon(Icons.Rounded.Lyrics, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.player_lyrics_btn))
-                    }
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
+        PlayerFullMusicSheetHost(
+            viewModel = viewModel,
+            musicVisualizerEnabled = settings.musicVisualizerEnabled,
+            onDismiss = { showFullMusicSheet = false },
+            onOpenEq = { showEqDialog = true },
+            onOpenSleep = { showSleepDialog = true },
+            onOpenQueue = { showQueueDialog = true },
+            onPickLyrics = { lrcPicker.launch(arrayOf("text/*", "application/octet-stream")) }
+        )
     }
 
     // Equalizer & Audio Effects Dialog
     if (showEqDialog) {
+        val eqState by viewModel.eqState.collectAsStateWithLifecycle()
         AlertDialog(
             onDismissRequest = { showEqDialog = false },
             title = { Text(stringResource(R.string.player_equalizer)) },
@@ -629,6 +438,8 @@ fun PlayerScreen(
 
     // Queue Dialog
     if (showQueueDialog) {
+        val musicQueue by viewModel.musicQueue.collectAsStateWithLifecycle()
+        val activePlayingUri by viewModel.currentPlayingUri.collectAsStateWithLifecycle()
         AlertDialog(
             onDismissRequest = { showQueueDialog = false },
             title = { Text(stringResource(R.string.player_playback_queue_title, musicQueue.size)) },
@@ -646,7 +457,7 @@ fun PlayerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("${idx + 1}. ${track.title}", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            if (track.uriString == playbackUi.currentUri) {
+                            if (track.uriString == activePlayingUri) {
                                 VaStatusChip(stringResource(R.string.player_playing_chip), tokens.primaryAccent)
                             }
                         }
@@ -802,7 +613,7 @@ fun PlayerScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                VaIconButton(onClick = { viewModel.removePlaylistItem(entry.id) }) {
+                                VaIconButton(onClick = { viewModel.removePlaylistItem(entry.id) }, animatePress = false) {
                                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.vp_remove), tint = tokens.danger)
                                 }
                             }
@@ -932,8 +743,8 @@ private fun VideoLibraryPane(
                 }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(playlists, key = { it.id }) { pl ->
-                    VaCard(onClick = { onOpenPlaylist(pl) }, modifier = Modifier.animateItem()) {
+                items(playlists, key = { it.id }, contentType = { "video_playlist" }) { pl ->
+                    VaCard(onClick = { onOpenPlaylist(pl) }, lightweight = true) {
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(pl.name, style = MaterialTheme.typography.titleMedium)
                             Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = tokens.primaryAccent)
@@ -1072,14 +883,14 @@ private fun VideoListItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            VaIconButton(onClick = onToggleFavorite) {
+            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
                 Icon(
                     if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (item.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            VaIconButton(onClick = onAddToPlaylist) {
+            VaIconButton(onClick = onAddToPlaylist, animatePress = false) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
@@ -1095,7 +906,7 @@ private fun MusicLibraryPane(
     selectedTab: MusicSubTab,
     hasAudioPerm: Boolean,
     playlists: List<com.tkofficial.videodownloder.database.PlaylistEntity>,
-    currentPlayingUri: String,
+    currentPlayingUriFlow: kotlinx.coroutines.flow.StateFlow<String>,
     onRequestAudioPerm: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onPickAudioFiles: () -> Unit,
@@ -1109,6 +920,7 @@ private fun MusicLibraryPane(
     onOpenPlaylist: (com.tkofficial.videodownloder.database.PlaylistEntity) -> Unit
 ) {
     val tokens = LocalVaTokens.current
+    val currentPlayingUri by currentPlayingUriFlow.collectAsStateWithLifecycle()
     val isGroupedTab = selectedTab in setOf(MusicSubTab.ALBUMS, MusicSubTab.ARTISTS, MusicSubTab.FOLDERS)
     var selectedGroupKey by remember(selectedTab) { mutableStateOf<String?>(null) }
 
@@ -1321,20 +1133,26 @@ private fun MusicTrackCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
-                song.albumArtUri?.let { art ->
-                    val artReq = remember(art) {
-                        ImageRequest.Builder(context)
-                            .data(Uri.parse(art))
-                            .size(192)
-                            .build()
-                    }
-                    AsyncImage(
-                        model = artReq,
-                        contentDescription = song.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                val artReq = remember(song.uriString, song.albumArtUri) {
+                    ImageRequest.Builder(context)
+                        .data(
+                            FastMediaThumb(
+                                uriString = song.uriString,
+                                isVideo = false,
+                                isAudio = true,
+                                fallbackArtUri = song.albumArtUri
+                            )
+                        )
+                        .size(160)
+                        .crossfade(false)
+                        .build()
                 }
+                AsyncImage(
+                    model = artReq,
+                    contentDescription = song.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1347,19 +1165,265 @@ private fun MusicTrackCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            VaIconButton(onClick = onToggleFavorite) {
+            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
                 Icon(
                     if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (song.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            VaIconButton(onClick = onEditMetadata) {
+            VaIconButton(onClick = onEditMetadata, animatePress = false) {
                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
             }
-            VaIconButton(onClick = onAddToPlaylist) {
+            VaIconButton(onClick = onAddToPlaylist, animatePress = false) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerMiniBarHost(
+    viewModel: PlayerViewModel,
+    onExpand: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val context = LocalContext.current
+    val playbackUi by viewModel.playbackUi.collectAsStateWithLifecycle()
+
+    AnimatedVisibility(visible = playbackUi.currentTitle.isNotBlank()) {
+        VaCard(
+            onClick = onExpand,
+            highlighted = true,
+            lightweight = true,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .testTag("mini_player_bar")
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(tokens.elevatedSurface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tokens.iconTint)
+                        val artReq = remember(playbackUi.currentUri, playbackUi.currentAlbumArtUri) {
+                            ImageRequest.Builder(context)
+                                .data(
+                                    FastMediaThumb(
+                                        uriString = playbackUi.currentUri.ifBlank { playbackUi.currentAlbumArtUri.orEmpty() },
+                                        isAudio = true,
+                                        fallbackArtUri = playbackUi.currentAlbumArtUri
+                                    )
+                                )
+                                .size(160)
+                                .crossfade(false)
+                                .build()
+                        }
+                        if (playbackUi.currentUri.isNotBlank() || !playbackUi.currentAlbumArtUri.isNullOrBlank()) {
+                            AsyncImage(
+                                model = artReq,
+                                contentDescription = playbackUi.currentTitle,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(playbackUi.currentTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            playbackUi.currentArtist.ifBlank { stringResource(R.string.app_name) },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    VaIconButton(onClick = viewModel::skipPrevious, animatePress = false) {
+                        Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev))
+                    }
+                    VaIconButton(onClick = viewModel::togglePlayPause, animatePress = false) {
+                        Icon(
+                            if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.player_play_pause),
+                            tint = tokens.primaryAccent
+                        )
+                    }
+                    VaIconButton(onClick = viewModel::skipNext, animatePress = false) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next))
+                    }
+                }
+                if (playbackUi.durationMs > 0L) {
+                    Spacer(Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { (playbackUi.positionMs.toFloat() / playbackUi.durationMs.toFloat()).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
+                        color = tokens.primaryAccent
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerFullMusicSheetHost(
+    viewModel: PlayerViewModel,
+    musicVisualizerEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onOpenEq: () -> Unit,
+    onOpenSleep: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onPickLyrics: () -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val context = LocalContext.current
+    val playbackUi by viewModel.playbackUi.collectAsStateWithLifecycle()
+    val musicQueue by viewModel.musicQueue.collectAsStateWithLifecycle()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = tokens.cardSurface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(tokens.heroGradient),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Album, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(80.dp))
+                val sheetArtReq = remember(playbackUi.currentUri, playbackUi.currentAlbumArtUri) {
+                    ImageRequest.Builder(context)
+                        .data(
+                            FastMediaThumb(
+                                uriString = playbackUi.currentUri.ifBlank { playbackUi.currentAlbumArtUri.orEmpty() },
+                                isAudio = true,
+                                fallbackArtUri = playbackUi.currentAlbumArtUri
+                            )
+                        )
+                        .size(512)
+                        .build()
+                }
+                if (playbackUi.currentUri.isNotBlank() || !playbackUi.currentAlbumArtUri.isNullOrBlank()) {
+                    AsyncImage(
+                        model = sheetArtReq,
+                        contentDescription = playbackUi.currentTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text(playbackUi.currentTitle, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(playbackUi.currentArtist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            if (musicVisualizerEnabled) {
+                Spacer(Modifier.height(12.dp))
+                MusicVisualizerCanvas(isPlaying = playbackUi.isPlaying, modifier = Modifier.fillMaxWidth().height(36.dp))
+            }
+
+            Spacer(Modifier.height(10.dp))
+            val dur = playbackUi.durationMs.coerceAtLeast(1L)
+            Slider(
+                value = (playbackUi.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f),
+                onValueChange = { frac -> viewModel.seekTo((frac * dur).toLong()) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(FormatUtils.formatDuration(playbackUi.positionMs), style = MaterialTheme.typography.labelSmall)
+                Text(FormatUtils.formatDuration(playbackUi.durationMs), style = MaterialTheme.typography.labelSmall)
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                VaIconButton(onClick = viewModel::toggleShuffle) {
+                    Icon(
+                        Icons.Rounded.Shuffle,
+                        contentDescription = stringResource(R.string.player_shuffle),
+                        tint = if (playbackUi.shuffleEnabled) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                VaIconButton(onClick = viewModel::skipPrevious) {
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_prev), modifier = Modifier.size(34.dp))
+                }
+                val playInteraction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .size(62.dp)
+                        .vaBouncePress(playInteraction, 0.9f)
+                        .clip(CircleShape)
+                        .background(tokens.heroGradient)
+                        .clickable(
+                            interactionSource = playInteraction,
+                            indication = androidx.compose.foundation.LocalIndication.current,
+                            onClick = viewModel::togglePlayPause
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (playbackUi.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = stringResource(R.string.player_play_pause),
+                        tint = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+                VaIconButton(onClick = viewModel::skipNext) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.player_next), modifier = Modifier.size(34.dp))
+                }
+                VaIconButton(onClick = viewModel::cycleRepeatMode) {
+                    val repIcon = if (playbackUi.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
+                    val active = playbackUi.repeatMode != Player.REPEAT_MODE_OFF
+                    Icon(repIcon, contentDescription = stringResource(R.string.player_repeat), tint = if (active) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                VaOutlinedButton(onClick = onOpenEq) {
+                    Icon(Icons.Rounded.Equalizer, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.player_equalizer))
+                }
+                VaOutlinedButton(onClick = onOpenSleep) {
+                    Icon(Icons.Rounded.Bedtime, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    val stText = if (playbackUi.sleepTimerRemainingSec > 0) stringResource(R.string.mins_short, playbackUi.sleepTimerRemainingSec / 60) else stringResource(R.string.player_sleep_timer)
+                    Text(stText)
+                }
+                VaOutlinedButton(onClick = onOpenQueue) {
+                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.player_queue_count, musicQueue.size))
+                }
+                VaOutlinedButton(onClick = onPickLyrics) {
+                    Icon(Icons.Rounded.Lyrics, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.player_lyrics_btn))
+                }
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

@@ -333,6 +333,7 @@ private fun ControlMenuRow(
     val tokens = LocalVaTokens.current
     VaCard(
         onClick = onClick,
+        lightweight = true,
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
         modifier = Modifier.fillMaxWidth().testTag(tag)
     ) {
