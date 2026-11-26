@@ -120,9 +120,13 @@ import com.tkofficial.videodownloder.ui.components.VaTextButton
 import com.tkofficial.videodownloder.ui.components.vaBouncePress
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.utilities.FormatUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.sin
+
+private val LrcTimestampRegex = Regex("""\[\d{2}:\d{2}(?:\.\d{1,3})?]""")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -220,11 +224,22 @@ fun PlayerScreen(
 
     var lyricsLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var showLyricsDialog by remember { mutableStateOf(false) }
+    var pendingLyricsUri by remember { mutableStateOf<Uri?>(null) }
+    LaunchedEffect(pendingLyricsUri) {
+        val pickedUri = pendingLyricsUri ?: return@LaunchedEffect
+        val parsed = withContext(Dispatchers.IO) {
+            val text = runCatching {
+                context.contentResolver.openInputStream(pickedUri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull().orEmpty()
+            text.lines().map { it.replace(LrcTimestampRegex, "").trim() }.filter { it.isNotBlank() }
+        }
+        lyricsLines = parsed
+        showLyricsDialog = true
+        pendingLyricsUri = null
+    }
     val lrcPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val text = context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-            lyricsLines = text.lines().map { it.replace(Regex("""\[\d{2}:\d{2}(?:\.\d{1,3})?]"""), "").trim() }.filter { it.isNotBlank() }
-            showLyricsDialog = true
+            pendingLyricsUri = uri
         }
     }
 

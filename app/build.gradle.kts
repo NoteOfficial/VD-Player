@@ -49,7 +49,13 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
-      signingConfig = signingConfigs.getByName("release")
+      // Use the real upload key when its secrets are provided; otherwise sign the optimized
+      // release build with the debug key so the installed APK is still fast (never a debug build).
+      signingConfig = if (System.getenv("STORE_PASSWORD").isNullOrBlank()) {
+        signingConfigs.getByName("debugConfig")
+      } else {
+        signingConfigs.getByName("release")
+      }
     }
     debug {
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in

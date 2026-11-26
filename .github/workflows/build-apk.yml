@@ -150,13 +150,13 @@ jobs:
               build_tmp/aligned.apk
             rm -f my-upload-key.jks
           else
-            echo "Building signed APK (debug keystore, v1 + v2 + v3 signatures)..."
-            gradle :app:assembleDebug \
+            echo "Building OPTIMIZED release APK (R8 + resource shrinking) signed with the debug keystore (v1 + v2 + v3)..."
+            gradle :app:assembleRelease \
               --no-daemon \
               --no-configuration-cache \
               --stacktrace \
-              "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
-            "$ZIPALIGN" -p -f 4 app/build/outputs/apk/debug/app-debug.apk build_tmp/aligned.apk
+              "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+            "$ZIPALIGN" -p -f 4 app/build/outputs/apk/release/app-release.apk build_tmp/aligned.apk
             "$APKSIGNER" sign \
               --ks debug.keystore \
               --ks-pass pass:android \
