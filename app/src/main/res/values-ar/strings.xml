@@ -514,6 +514,7 @@
     <string name="fm_new_folder">مجلد جديد</string>
     <string name="fm_extract_zip">فك ضغط ZIP</string>
     <string name="fm_file_hash">تجزئة الملف</string>
+    <string name="fm_folder_label">مجلد</string>
     <string name="storage_internal_title">التخزين الداخلي للجهاز</string>
     <string name="storage_summary_line">الإجمالي: %1$s • المستخدم: %2$s • المتاح: %3$s</string>
     <string name="storage_app_media">وسائط VD Player: %1$s</string>

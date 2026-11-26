@@ -259,6 +259,7 @@ fun VaultScreen(
                         items(vaultItems, key = { it.id }, contentType = { "vault_item" }) { item ->
                             VaCard(
                                 onClick = { viewModel.openVaultItem(item) },
+                                lightweight = true,
                                 contentPadding = PaddingValues(12.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -272,7 +273,7 @@ fun VaultScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    VaIconButton(onClick = { deleteConfirmItem = item }) {
+                                    VaIconButton(onClick = { deleteConfirmItem = item }, animatePress = false) {
                                         Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.action_delete), tint = tokens.danger)
                                     }
                                 }

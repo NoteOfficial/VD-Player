@@ -514,6 +514,7 @@
     <string name="fm_new_folder">नया फ़ोल्डर</string>
     <string name="fm_extract_zip">ZIP निकालें</string>
     <string name="fm_file_hash">फ़ाइल हैश</string>
+    <string name="fm_folder_label">फ़ोल्डर</string>
     <string name="storage_internal_title">डिवाइस आंतरिक स्टोरेज</string>
     <string name="storage_summary_line">कुल: %1$s • उपयोग: %2$s • मुक्त: %3$s</string>
     <string name="storage_app_media">VD Player मीडिया: %1$s</string>
