@@ -22,6 +22,7 @@ import com.tkofficial.videodownloder.models.DeviceMediaItem
 import com.tkofficial.videodownloder.services.AudioEffectsBridge
 import com.tkofficial.videodownloder.services.PlaybackService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -54,6 +57,7 @@ data class PlaybackUiState(
     val sleepTimerRemainingSec: Int = 0
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as DownloaderVaApp
     private val container = app.container
@@ -78,6 +82,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val songOverrides = playerDao.observeSongOverrides()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val historyMapFlow = playbackHistory
+        .map { list -> list.associateBy { it.mediaUri } }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+
+    private val favoriteKeysFlow = favorites
+        .map { list -> list.mapTo(HashSet(list.size)) { it.itemKey } }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+
+    private val songOverridesMapFlow = songOverrides
+        .map { list -> list.associateBy { it.mediaUri } }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+
     private val _mainSection = MutableStateFlow(PlayerMainSection.VIDEO)
     val mainSection: StateFlow<PlayerMainSection> = _mainSection.asStateFlow()
 
@@ -98,17 +117,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     val videoFolderMap: StateFlow<Map<String, List<DeviceMediaItem>>> = _videos
         .map { list ->
-            list.groupBy { it.folderName.ifBlank { "Local Folder" } }
-                .entries
-                .sortedBy { it.key.lowercase() }
-                .associate { it.key to it.value }
+            val grouped = list.groupBy { it.folderName.ifBlank { "Local Folder" } }
+            val sorted = grouped.entries.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.key })
+            LinkedHashMap<String, List<DeviceMediaItem>>(sorted.size).apply {
+                for (entry in sorted) put(entry.key, entry.value)
+            }
         }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val videoFolderEntries: StateFlow<List<Pair<String, List<DeviceMediaItem>>>> = videoFolderMap
-        .map { it.entries.map { e -> e.key to e.value } }
+        .map { map -> map.entries.map { it.key to it.value } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -126,19 +146,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val musicGroupMap: StateFlow<Map<String, List<DeviceMediaItem>>> = combine(_songs, _musicTab) { list, tab ->
-        when (tab) {
+        val grouped = when (tab) {
             MusicSubTab.ALBUMS -> list.groupBy { it.album.ifBlank { "Unknown Album" } }
             MusicSubTab.ARTISTS -> list.groupBy { it.artist.ifBlank { "Unknown Artist" } }
             MusicSubTab.FOLDERS -> list.groupBy { it.folderName.ifBlank { "Music" } }
-            else -> emptyMap()
-        }.entries.sortedBy { it.key.lowercase() }.associate { it.key to it.value }
+            else -> return@combine emptyMap()
+        }
+        val sorted = grouped.entries.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.key })
+        LinkedHashMap<String, List<DeviceMediaItem>>(sorted.size).apply {
+            for (entry in sorted) put(entry.key, entry.value)
+        }
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val musicGroupEntries: StateFlow<List<Pair<String, List<DeviceMediaItem>>>> = musicGroupMap
-        .map { it.entries.map { e -> e.key to e.value } }
+        .map { map -> map.entries.map { it.key to it.value } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -194,14 +218,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 Triple(vidPerm, folders, pickedVid)
             }
                 .distinctUntilChanged()
-                .map { (vidPerm, folders, pickedVid) ->
-                    mediaRepo.loadRawVideos(
-                        hasVideoPermission = vidPerm,
-                        persistedFolderUris = folders,
-                        pickedVideoUris = pickedVid
-                    )
+                .flatMapLatest { (vidPerm, folders, pickedVid) ->
+                    flow {
+                        emit(
+                            mediaRepo.loadRawVideos(
+                                hasVideoPermission = vidPerm,
+                                persistedFolderUris = folders,
+                                pickedVideoUris = pickedVid
+                            )
+                        )
+                    }.flowOn(Dispatchers.IO)
                 }
-                .flowOn(Dispatchers.IO)
                 .collect { loaded ->
                     _rawVideos.value = loaded
                 }
@@ -210,13 +237,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             combine(
                 _rawVideos,
-                playbackHistory,
-                favorites
-            ) { raw, hist, favs ->
+                historyMapFlow,
+                favoriteKeysFlow
+            ) { raw, histMap, favKeys ->
                 mediaRepo.applyVideoMetadata(
                     rawVideos = raw,
-                    historyMap = hist.associateBy { it.mediaUri },
-                    favoriteKeys = favs.map { it.itemKey }.toSet()
+                    historyMap = histMap,
+                    favoriteKeys = favKeys
                 )
             }
                 .flowOn(Dispatchers.Default)
@@ -235,13 +262,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 perm to picked
             }
                 .distinctUntilChanged()
-                .map { (perm, picked) ->
-                    mediaRepo.loadRawAudio(
-                        hasAudioPermission = perm,
-                        pickedAudioUris = picked
-                    )
+                .flatMapLatest { (perm, picked) ->
+                    flow {
+                        emit(
+                            mediaRepo.loadRawAudio(
+                                hasAudioPermission = perm,
+                                pickedAudioUris = picked
+                            )
+                        )
+                    }.flowOn(Dispatchers.IO)
                 }
-                .flowOn(Dispatchers.IO)
                 .collect { loaded ->
                     _rawSongs.value = loaded
                 }
@@ -250,15 +280,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             combine(
                 _rawSongs,
-                playbackHistory,
-                favorites,
-                songOverrides
-            ) { raw, hist, favs, overrides ->
+                historyMapFlow,
+                favoriteKeysFlow,
+                songOverridesMapFlow
+            ) { raw, histMap, favKeys, overridesMap ->
                 mediaRepo.applyAudioMetadata(
                     rawAudio = raw,
-                    historyMap = hist.associateBy { it.mediaUri },
-                    favoriteKeys = favs.map { it.itemKey }.toSet(),
-                    overrides = overrides.associateBy { it.mediaUri }
+                    historyMap = histMap,
+                    favoriteKeys = favKeys,
+                    overrides = overridesMap
                 )
             }
                 .flowOn(Dispatchers.Default)

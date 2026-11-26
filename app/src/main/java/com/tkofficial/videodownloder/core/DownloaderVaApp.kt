@@ -119,6 +119,13 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
             val assetCfg = container.apiConfigManager.loadDefaultAssetConfig()
             val current = container.preferencesRepository.settingsFlow.first()
             if (current.customExtractorEndpoint.isBlank() && !current.apiEnabled && assetCfg.enabled && assetCfg.primaryEndpoint.isNotBlank()) {
+                val seededKey = if (current.encryptedExtractorApiKey.isBlank() && com.tkofficial.videodownloder.network.CustomApiConfig.API_KEY.isNotBlank()) {
+                    runCatching {
+                        container.securityManager.encryptSecretString(com.tkofficial.videodownloder.network.CustomApiConfig.API_KEY.trim())
+                    }.getOrDefault("")
+                } else {
+                    current.encryptedExtractorApiKey
+                }
                 container.preferencesRepository.updateSettings { s ->
                     s.copy(
                         apiEnabled = assetCfg.enabled,
@@ -128,7 +135,9 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
                         apiVersion = assetCfg.apiVersion,
                         requestTimeoutSeconds = assetCfg.requestTimeoutSeconds,
                         connectTimeoutSeconds = assetCfg.connectTimeoutSeconds,
-                        retryLimit = assetCfg.retryLimit
+                        retryLimit = assetCfg.retryLimit,
+                        encryptedExtractorApiKey = seededKey,
+                        allowCleartextHttp = s.allowCleartextHttp || com.tkofficial.videodownloder.network.CustomApiConfig.ALLOW_CLEARTEXT_HTTP
                     )
                 }
             }
@@ -136,11 +145,11 @@ class DownloaderVaApp : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
-        val mediaDecodeDispatcher = Dispatchers.IO.limitedParallelism(3)
+        val mediaDecodeDispatcher = Dispatchers.IO.limitedParallelism(4)
         return ImageLoader.Builder(this)
             .fetcherDispatcher(mediaDecodeDispatcher)
             .decoderDispatcher(mediaDecodeDispatcher)
-            .bitmapFactoryMaxParallelism(2)
+            .bitmapFactoryMaxParallelism(4)
             .allowRgb565(true)
             .memoryCache {
                 MemoryCache.Builder(this)

@@ -883,14 +883,20 @@ private fun VideoListItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onToggleFavorite),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (item.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            VaIconButton(onClick = onAddToPlaylist, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onAddToPlaylist),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }
@@ -1165,17 +1171,26 @@ private fun MusicTrackCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onToggleFavorite),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (song.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            VaIconButton(onClick = onEditMetadata, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onEditMetadata),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.player_edit_metadata))
             }
-            VaIconButton(onClick = onAddToPlaylist, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onAddToPlaylist),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.player_add_to_playlist))
             }
         }

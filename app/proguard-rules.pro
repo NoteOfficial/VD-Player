@@ -30,7 +30,8 @@
 -keep @androidx.room.Entity class *
 -keep @androidx.room.Dao class *
 
-# Keep Moshi models & generated adapters
+# Keep Moshi models, generated adapters & CustomApiConfig
+-keep class com.tkofficial.videodownloder.network.CustomApiConfig { *; }
 -keepclassmembers class com.tkofficial.videodownloder.network.** { *; }
 -keepclasseswithmembers class * extends com.squareup.moshi.JsonAdapter {
     <init>(com.squareup.moshi.Moshi);

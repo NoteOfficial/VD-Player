@@ -521,6 +521,7 @@ fun GalleryScreen(
                     val isSelected = selectedIds.contains(item.id)
                     GalleryGridTile(
                         item = item,
+                        gridColumns = gridColumns,
                         isSelected = isSelected,
                         hasAnySelection = hasAnySelection,
                         gridItemShape = gridItemShape,
@@ -848,6 +849,7 @@ private fun FullscreenImageViewerDialog(
 @Composable
 private fun GalleryGridTile(
     item: DownloadedMediaEntity,
+    gridColumns: Int,
     isSelected: Boolean,
     hasAnySelection: Boolean,
     gridItemShape: RoundedCornerShape,
@@ -857,6 +859,7 @@ private fun GalleryGridTile(
 ) {
     val context = LocalContext.current
     val tokens = LocalVaTokens.current
+    val targetThumbPx = if (gridColumns >= 3) 240 else 320
     Box(
         modifier = Modifier
             .aspectRatio(1f)
@@ -868,10 +871,10 @@ private fun GalleryGridTile(
             )
             .clickable(onClick = onTileClick)
     ) {
-        val thumbModel = remember(item.filePath, item.contentUri, item.id) {
+        val thumbModel = remember(item.filePath, item.contentUri, item.id, targetThumbPx) {
             ImageRequest.Builder(context)
                 .data(mediaThumbData(item))
-                .size(320)
+                .size(targetThumbPx)
                 .crossfade(false)
                 .build()
         }
@@ -897,10 +900,13 @@ private fun GalleryGridTile(
                 modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp)
             )
         }
-        VaIconButton(
-            onClick = onToggleSelection,
-            animatePress = false,
-            modifier = Modifier.align(Alignment.TopStart).size(36.dp)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .size(48.dp)
+                .clickable(onClick = onToggleSelection)
+                .padding(8.dp),
+            contentAlignment = Alignment.TopStart
         ) {
             Icon(
                 Icons.Rounded.CheckCircle,
@@ -967,14 +973,20 @@ private fun GalleryListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            VaIconButton(onClick = onToggleFavorite, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onToggleFavorite),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(R.string.gallery_favorite),
                     tint = if (item.isFavorite) tokens.danger else tokens.iconTint
                 )
             }
-            VaIconButton(onClick = onShare, animatePress = false) {
+            Box(
+                modifier = Modifier.size(48.dp).clickable(onClick = onShare),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
             }
         }

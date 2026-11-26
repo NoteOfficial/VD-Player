@@ -355,6 +355,7 @@
     <string name="set_allow_http">السماح بروابط HTTP غير المشفرة</string>
     <string name="set_request_timeout">مهلة الاتصال: %1$d ث</string>
     <string name="set_api_desc">أضف رابط استخراج HTTPS مخصص وموثق. تُشفّر المفاتيح عبر Android Keystore قبل الحفظ.</string>
+    <string name="api_paths_hint">مسارات الكود و APK: ملف CustomApiConfig.kt (DEX: com.tkofficial.videodownloder.network.CustomApiConfig) أو assets/configuration/app_settings.json</string>
     <string name="set_api_endpoint">رابط نقطة HTTPS المخصصة</string>
     <string name="set_api_key">مفتاح Bearer API (اختياري)</string>
     <string name="set_api_save">تشفير وحفظ إعدادات API</string>

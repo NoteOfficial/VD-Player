@@ -355,6 +355,7 @@
     <string name="set_allow_http">क्लियरटेक्स्ट HTTP अनुमति दें (असुरक्षित)</string>
     <string name="set_request_timeout">अनुरोध समय-सीमा: %1$d सेकंड</string>
     <string name="set_api_desc">एक वैकल्पिक अधिकृत HTTPS एक्सट्रैक्शन एंडपॉइंट कॉन्फ़िगर करें। कुंजी Android Keystore द्वारा एन्क्रिप्ट की जाती हैं।</string>
+    <string name="api_paths_hint">कोड और APK पथ: CustomApiConfig.kt (DEX: com.tkofficial.videodownloder.network.CustomApiConfig) या assets/configuration/app_settings.json</string>
     <string name="set_api_endpoint">HTTPS एक्सट्रैक्टर एंडपॉइंट URL</string>
     <string name="set_api_key">Bearer API कुंजी (वैकल्पिक)</string>
     <string name="set_api_save">एन्क्रिप्ट और API सहेजें</string>

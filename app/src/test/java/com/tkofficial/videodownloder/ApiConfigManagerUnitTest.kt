@@ -114,4 +114,30 @@ class ApiConfigManagerUnitTest {
             )
         )
     }
+
+    @Test
+    fun `resolveDefaultConfig prefers enabled asset config and falls back cleanly`() {
+        val enabledAsset = MediaServiceFileConfig(
+            enabled = true,
+            status = "configured",
+            primaryEndpoint = "https://asset.example.com/resolve"
+        )
+        assertEquals(enabledAsset, ApiConfigManager.resolveDefaultConfig(enabledAsset))
+
+        val disabledAsset = MediaServiceFileConfig(enabled = false, primaryEndpoint = "")
+        val resolved = ApiConfigManager.resolveDefaultConfig(disabledAsset)
+        assertEquals(
+            com.tkofficial.videodownloder.network.CustomApiConfig.isConfigured(),
+            resolved.enabled && resolved.primaryEndpoint.isNotBlank()
+        )
+    }
+
+    @Test
+    fun `CustomApiConfig toFileConfig clamps timeout and retry bounds cleanly`() {
+        val fileCfg = com.tkofficial.videodownloder.network.CustomApiConfig.toFileConfig()
+        assertTrue(fileCfg.requestTimeoutSeconds in 5..120)
+        assertTrue(fileCfg.connectTimeoutSeconds in 5..60)
+        assertTrue(fileCfg.retryLimit in 0..5)
+        assertTrue(fileCfg.apiVersion.isNotBlank())
+    }
 }

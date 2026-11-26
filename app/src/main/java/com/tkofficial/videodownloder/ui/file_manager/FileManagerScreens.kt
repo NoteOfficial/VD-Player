@@ -11,8 +11,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -278,23 +281,38 @@ fun FileManagerScreen(
                             }
                             if (!entry.isDirectory) {
                                 if (entry.name.endsWith(".zip", true)) {
-                                    VaIconButton(onClick = { viewModel.extractZipEntry(entry) }, animatePress = false) {
+                                    Box(
+                                        modifier = Modifier.size(48.dp).clickable { viewModel.extractZipEntry(entry) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
                                         Icon(Icons.Rounded.Unarchive, contentDescription = stringResource(R.string.fm_extract_zip))
                                     }
                                 }
-                                VaIconButton(onClick = { hashTarget = entry }, animatePress = false) {
+                                Box(
+                                    modifier = Modifier.size(48.dp).clickable { hashTarget = entry },
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Icon(Icons.Rounded.Tag, contentDescription = stringResource(R.string.fm_file_hash))
                                 }
-                                VaIconButton(onClick = { viewModel.shareFileEntry(entry) }, animatePress = false) {
+                                Box(
+                                    modifier = Modifier.size(48.dp).clickable { viewModel.shareFileEntry(entry) },
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.action_share))
                                 }
                             }
-                            VaIconButton(onClick = { renameTarget = entry }, animatePress = false) {
+                            Box(
+                                modifier = Modifier.size(48.dp).clickable { renameTarget = entry },
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = stringResource(R.string.action_rename))
                             }
-                            VaIconButton(onClick = {
-                                selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
-                            }, animatePress = false) {
+                            Box(
+                                modifier = Modifier.size(48.dp).clickable {
+                                    selectedPaths = if (isSel) selectedPaths - entry.path else selectedPaths + entry.path
+                                },
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.gallery_select), tint = if (isSel) tokens.primaryAccent else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }

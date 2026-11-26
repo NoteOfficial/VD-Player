@@ -251,6 +251,14 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun resetApiConfigToDefaults() {
         viewModelScope.launch {
             val defaults = withContext(Dispatchers.IO) { apiConfigManager.loadDefaultAssetConfig() }
+            val defaultEncryptedKey = withContext(Dispatchers.IO) {
+                val rawKey = com.tkofficial.videodownloder.network.CustomApiConfig.API_KEY.trim()
+                if (rawKey.isNotBlank() && defaults.primaryEndpoint == com.tkofficial.videodownloder.network.CustomApiConfig.PRIMARY_ENDPOINT.trim()) {
+                    runCatching { securityManager.encryptSecretString(rawKey) }.getOrDefault("")
+                } else {
+                    ""
+                }
+            }
             prefsRepo.updateSettings {
                 it.copy(
                     apiEnabled = defaults.enabled,
@@ -261,7 +269,8 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
                     connectTimeoutSeconds = defaults.connectTimeoutSeconds,
                     requestTimeoutSeconds = defaults.requestTimeoutSeconds,
                     retryLimit = defaults.retryLimit,
-                    encryptedExtractorApiKey = ""
+                    encryptedExtractorApiKey = defaultEncryptedKey,
+                    allowCleartextHttp = it.allowCleartextHttp || com.tkofficial.videodownloder.network.CustomApiConfig.ALLOW_CLEARTEXT_HTTP
                 )
             }
             _apiTestResult.value = null

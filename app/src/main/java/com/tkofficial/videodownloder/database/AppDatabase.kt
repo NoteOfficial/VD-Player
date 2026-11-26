@@ -54,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "downloader_va.db"
                 )
+                    .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { INSTANCE = it }

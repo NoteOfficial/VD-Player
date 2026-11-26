@@ -16,13 +16,17 @@ import com.tkofficial.videodownloder.database.FavoriteEntity
 import com.tkofficial.videodownloder.models.MediaCategory
 import com.tkofficial.videodownloder.utilities.FormatUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -38,6 +42,7 @@ enum class GallerySortOrder(@StringRes val labelRes: Int) {
     SIZE_DESC(R.string.sort_size_desc)
 }
 
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as DownloaderVaApp
     private val container = app.container
@@ -86,13 +91,21 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val favoriteKeySet = favorites
-        .map { favs -> favs.map { it.itemKey }.toSet() }
+        .map { favs -> favs.mapTo(HashSet(favs.size)) { it.itemKey } }
+        .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
 
     private val excludeKeysFlow = combine(downloadedActive, trashedMedia) { active, trashed ->
-        val all = active + trashed
-        val paths = all.mapNotNull { it.filePath.takeIf(String::isNotBlank) }.toSet()
-        val uris = all.mapNotNull { it.contentUri.takeIf(String::isNotBlank) }.toSet()
+        val paths = HashSet<String>(active.size + trashed.size)
+        val uris = HashSet<String>(active.size + trashed.size)
+        for (item in active) {
+            if (item.filePath.isNotBlank()) paths.add(item.filePath)
+            if (item.contentUri.isNotBlank()) uris.add(item.contentUri)
+        }
+        for (item in trashed) {
+            if (item.filePath.isNotBlank()) paths.add(item.filePath)
+            if (item.contentUri.isNotBlank()) uris.add(item.contentUri)
+        }
         paths to uris
     }
         .flowOn(Dispatchers.Default)
@@ -104,16 +117,18 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         favoriteKeySet
     ) { raw, excludes, favKeys ->
         val (excludePaths, excludeUris) = excludes
-        raw.mapNotNull { item ->
+        if (raw.isEmpty()) return@combine emptyList()
+        val out = ArrayList<DownloadedMediaEntity>(raw.size)
+        for (item in raw) {
             if (excludeUris.contains(item.contentUri) ||
                 (item.filePath.isNotBlank() && excludePaths.contains(item.filePath))
             ) {
-                null
-            } else {
-                val fav = favKeys.contains(item.contentUri)
-                if (item.isFavorite == fav) item else item.copy(isFavorite = fav)
+                continue
             }
+            val fav = favKeys.contains(item.contentUri)
+            out.add(if (item.isFavorite == fav) item else item.copy(isFavorite = fav))
         }
+        out
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -123,7 +138,12 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         downloadedActive,
         _deviceMedia
     ) { downloaded, device ->
-        downloaded + device
+        if (downloaded.isEmpty()) device
+        else if (device.isEmpty()) downloaded
+        else ArrayList<DownloadedMediaEntity>(downloaded.size + device.size).apply {
+            addAll(downloaded)
+            addAll(device)
+        }
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -139,28 +159,29 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 Triple(imgPerm, vidPerm, trigger)
             }
                 .distinctUntilChanged()
-                .map { (imgPerm, vidPerm, _) ->
-                    mediaRepo.loadDeviceGalleryMedia(
+                .flatMapLatest { (imgPerm, vidPerm, _) ->
+                    mediaRepo.loadDeviceGalleryMediaFlow(
                         hasImagesPermission = imgPerm,
-                        hasVideoPermission = vidPerm,
-                        excludeFilePaths = emptySet(),
-                        excludeContentUris = emptySet(),
-                        favoriteKeys = emptySet()
+                        hasVideoPermission = vidPerm
                     )
                 }
-                .flowOn(Dispatchers.IO)
                 .collect { scanned ->
                     _rawDeviceMedia.value = scanned
                 }
         }
     }
 
+    private val debouncedQuery = _searchQuery
+        .map { it.trim() }
+        .distinctUntilChanged()
+        .debounce(90L)
+
     val displayedMedia: StateFlow<List<DownloadedMediaEntity>> = combine(
         allDownloadedMedia,
         trashedMedia,
         _section,
         _selectedAlbumId,
-        _searchQuery,
+        debouncedQuery,
         _sortOrder
     ) { arr ->
         @Suppress("UNCHECKED_CAST")
@@ -169,33 +190,45 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         val trashed = arr[1] as List<DownloadedMediaEntity>
         val sec = arr[2] as GallerySection
         val albumId = arr[3] as Long?
-        val query = (arr[4] as String).trim().lowercase()
+        val query = arr[4] as String
         val sort = arr[5] as GallerySortOrder
 
-        val base = when (sec) {
-            GallerySection.ALL -> active.filter { it.mediaType == "PHOTO" || it.mediaType == "VIDEO" }
-            GallerySection.PHOTOS -> active.filter { it.mediaType == "PHOTO" }
-            GallerySection.VIDEOS -> active.filter { it.mediaType == "VIDEO" }
-            GallerySection.ALBUMS -> if (albumId != null) {
-                active.filter { it.albumId == albumId && (it.mediaType == "PHOTO" || it.mediaType == "VIDEO") }
-            } else {
-                active.filter { it.mediaType == "PHOTO" || it.mediaType == "VIDEO" }
+        val cutoff = if (sec == GallerySection.RECENTLY_ADDED) {
+            System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        } else 0L
+
+        val source = if (sec == GallerySection.TRASH) trashed else active
+        val filtered = ArrayList<DownloadedMediaEntity>(source.size)
+        for (item in source) {
+            val matchesSec = when (sec) {
+                GallerySection.ALL -> item.mediaType == "PHOTO" || item.mediaType == "VIDEO"
+                GallerySection.PHOTOS -> item.mediaType == "PHOTO"
+                GallerySection.VIDEOS -> item.mediaType == "VIDEO"
+                GallerySection.ALBUMS -> (albumId == null || item.albumId == albumId) &&
+                    (item.mediaType == "PHOTO" || item.mediaType == "VIDEO")
+                GallerySection.FAVORITES -> item.isFavorite &&
+                    (item.mediaType == "PHOTO" || item.mediaType == "VIDEO")
+                GallerySection.RECENTLY_ADDED -> item.addedAt >= cutoff &&
+                    (item.mediaType == "PHOTO" || item.mediaType == "VIDEO")
+                GallerySection.TRASH -> true
             }
-            GallerySection.FAVORITES -> active.filter { it.isFavorite && (it.mediaType == "PHOTO" || it.mediaType == "VIDEO") }
-            GallerySection.RECENTLY_ADDED -> {
-                val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
-                active.filter { it.addedAt >= cutoff && (it.mediaType == "PHOTO" || it.mediaType == "VIDEO") }
+            if (!matchesSec) continue
+            if (query.isNotEmpty() &&
+                !item.title.contains(query, ignoreCase = true) &&
+                !item.fileName.contains(query, ignoreCase = true)
+            ) {
+                continue
             }
-            GallerySection.TRASH -> trashed
-        }.filter {
-            query.isEmpty() || it.title.lowercase().contains(query) || it.fileName.lowercase().contains(query)
+            filtered.add(item)
         }
 
         when (sort) {
-            GallerySortOrder.DATE_DESC -> base.sortedByDescending { it.addedAt }
-            GallerySortOrder.DATE_ASC -> base.sortedBy { it.addedAt }
-            GallerySortOrder.NAME_ASC -> base.sortedBy { it.title.lowercase() }
-            GallerySortOrder.SIZE_DESC -> base.sortedByDescending { it.sizeBytes }
+            GallerySortOrder.DATE_DESC -> filtered.apply { sortByDescending { it.addedAt } }
+            GallerySortOrder.DATE_ASC -> filtered.apply { sortBy { it.addedAt } }
+            GallerySortOrder.NAME_ASC -> filtered.apply {
+                sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+            }
+            GallerySortOrder.SIZE_DESC -> filtered.apply { sortByDescending { it.sizeBytes } }
         }
     }
         .flowOn(Dispatchers.Default)

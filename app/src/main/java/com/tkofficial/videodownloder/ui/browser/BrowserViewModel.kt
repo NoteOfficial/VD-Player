@@ -1,6 +1,8 @@
 package com.tkofficial.videodownloder.ui.browser
 
 import android.app.Application
+import android.os.Bundle
+import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkofficial.videodownloder.core.DownloaderVaApp
@@ -46,13 +48,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _detectedMedia = MutableStateFlow<List<DetectedWebMedia>>(emptyList())
     val detectedMedia: StateFlow<List<DetectedWebMedia>> = _detectedMedia.asStateFlow()
 
+    private val tabWebViewStates = mutableMapOf<String, Bundle>()
+
+    @Volatile
+    var snifferEnabledSnapshot: Boolean = true
+
+    @Volatile
+    var activeTabTitleSnapshot: String = "DuckDuckGo"
+
     init {
         viewModelScope.launch {
             val home = prefsRepo.settingsFlow.first().browserHomeUrl.trim()
             if (home.isNotBlank()) {
                 _tabs.update { current ->
                     if (current.size == 1 && current[0].url == "https://duckduckgo.com" && current[0].title == "DuckDuckGo") {
-                        listOf(current[0].copy(url = home, title = FormatUtils.extractHost(home).ifBlank { home }))
+                        val resolvedTitle = FormatUtils.extractHost(home).ifBlank { home }
+                        activeTabTitleSnapshot = resolvedTitle
+                        listOf(current[0].copy(url = home, title = resolvedTitle))
                     } else {
                         current
                     }
@@ -61,34 +73,56 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun saveTabWebViewState(tabId: String, webView: WebView) {
+        val bundle = Bundle()
+        if (webView.saveState(bundle) != null) {
+            tabWebViewStates[tabId] = bundle
+        }
+    }
+
+    fun restoreTabWebViewState(tabId: String, webView: WebView): Boolean {
+        val bundle = tabWebViewStates[tabId] ?: return false
+        return webView.restoreState(bundle) != null
+    }
+
     fun openNewTab(url: String = settings.value.browserHomeUrl.ifBlank { "https://duckduckgo.com" }) {
         val newTab = BrowserTab(id = UUID.randomUUID().toString(), title = "New Tab", url = url)
         _tabs.value = _tabs.value + newTab
         _activeTabIndex.value = _tabs.value.lastIndex
+        activeTabTitleSnapshot = newTab.title
         _detectedMedia.value = emptyList()
     }
 
     fun selectTab(index: Int) {
         if (index in _tabs.value.indices) {
             _activeTabIndex.value = index
+            activeTabTitleSnapshot = _tabs.value[index].title
             _detectedMedia.value = emptyList()
         }
     }
 
     fun closeTab(index: Int) {
         if (_tabs.value.size <= 1) return
+        val closed = _tabs.value.getOrNull(index)
+        if (closed != null) {
+            tabWebViewStates.remove(closed.id)
+        }
         val updated = _tabs.value.toMutableList().apply { removeAt(index) }
         _tabs.value = updated
-        _activeTabIndex.value = _activeTabIndex.value.coerceIn(0, updated.lastIndex)
+        val nextIdx = _activeTabIndex.value.coerceIn(0, updated.lastIndex)
+        _activeTabIndex.value = nextIdx
+        activeTabTitleSnapshot = updated.getOrNull(nextIdx)?.title ?: ""
     }
 
     fun updateActiveTab(url: String? = null, title: String? = null, isLoading: Boolean? = null, progress: Int? = null) {
         val idx = _activeTabIndex.value
         val list = _tabs.value.toMutableList()
         val current = list.getOrNull(idx) ?: return
+        val updatedTitle = title ?: current.title
+        activeTabTitleSnapshot = updatedTitle
         list[idx] = current.copy(
             url = url ?: current.url,
-            title = title ?: current.title,
+            title = updatedTitle,
             isLoading = isLoading ?: current.isLoading,
             progress = progress ?: current.progress
         )

@@ -111,14 +111,24 @@ class ApiConfigManager(
             }
             return if (settings.apiEnabled) ApiConfigStatus.CONFIGURED_READY else ApiConfigStatus.NOT_CONFIGURED
         }
+        fun resolveDefaultConfig(assetConfig: MediaServiceFileConfig): MediaServiceFileConfig {
+            return if (assetConfig.enabled && assetConfig.primaryEndpoint.isNotBlank()) {
+                assetConfig
+            } else if (CustomApiConfig.isConfigured()) {
+                CustomApiConfig.toFileConfig()
+            } else {
+                assetConfig
+            }
+        }
     }
 
     fun loadDefaultAssetConfig(): MediaServiceFileConfig {
-        return runCatching {
+        val assetCfg = runCatching {
             context.assets.open(ASSET_CONFIG_PATH).bufferedReader(Charsets.UTF_8).use { reader ->
                 parseConfigJson(reader.readText()).getOrDefault(MediaServiceFileConfig())
             }
         }.getOrDefault(MediaServiceFileConfig())
+        return resolveDefaultConfig(assetCfg)
     }
 
     suspend fun importConfigFromUri(uri: Uri): Result<MediaServiceFileConfig> = withContext(Dispatchers.IO) {

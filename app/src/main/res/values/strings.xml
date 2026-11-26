@@ -368,6 +368,7 @@
     <string name="set_allow_http">Allow Cleartext HTTP (Not Recommended)</string>
     <string name="set_request_timeout">Request Timeout: %1$ds</string>
     <string name="set_api_desc">Configure an optional authorized HTTPS extraction endpoint. Tokens are encrypted via Android Keystore before saving.</string>
+    <string name="api_paths_hint">Code &amp; APK Paths: CustomApiConfig.kt (DEX: com.tkofficial.videodownloder.network.CustomApiConfig) or assets/configuration/app_settings.json</string>
     <string name="set_api_endpoint">HTTPS Extractor Endpoint URL</string>
     <string name="set_api_key">Bearer API Key (Optional)</string>
     <string name="set_api_save">Encrypt &amp; Save API Config</string>

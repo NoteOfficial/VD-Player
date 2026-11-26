@@ -107,6 +107,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -148,7 +149,8 @@ fun VideoPlayerScreen(
     val scope = rememberCoroutineScope()
 
     val settings by playerViewModel.settings.collectAsStateWithLifecycle()
-    val videos by playerViewModel.videos.collectAsStateWithLifecycle()
+    val latestResumeEnabled by androidx.compose.runtime.rememberUpdatedState(settings.videoResumePlayback)
+    val latestAutoNext by androidx.compose.runtime.rememberUpdatedState(settings.videoAutoNext)
 
     var currentUri by remember { mutableStateOf(mediaUri) }
     var currentTitle by remember { mutableStateOf(title) }
@@ -180,7 +182,14 @@ fun VideoPlayerScreen(
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
         }
-        ExoPlayer.Builder(context, rf).build()
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(10_000, 30_000, 500, 1_500)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+        ExoPlayer.Builder(context, rf)
+            .setLoadControl(loadControl)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
     }
 
     LaunchedEffect(settings.videoDefaultSpeed) {
@@ -227,8 +236,8 @@ fun VideoPlayerScreen(
         }
         exoPlayer.setMediaItem(builder.build())
         exoPlayer.prepare()
-        if (settings.videoResumePlayback) {
-            val saved = videos.firstOrNull { it.uriString == currentUri }?.lastPositionMs ?: 0L
+        if (latestResumeEnabled) {
+            val saved = playerViewModel.videos.value.firstOrNull { it.uriString == currentUri }?.lastPositionMs ?: 0L
             if (saved > 1000L) exoPlayer.seekTo(saved)
         }
         exoPlayer.setPlaybackSpeed(playbackSpeed)
@@ -243,10 +252,11 @@ fun VideoPlayerScreen(
 
             override fun onPlaybackStateChanged(state: Int) {
                 durationMs = exoPlayer.duration.coerceAtLeast(0L)
-                if (state == Player.STATE_ENDED && settings.videoAutoNext) {
-                    val idx = videos.indexOfFirst { it.uriString == currentUri }
-                    if (idx >= 0 && idx + 1 < videos.size) {
-                        val next = videos[idx + 1]
+                if (state == Player.STATE_ENDED && latestAutoNext) {
+                    val currentVideos = playerViewModel.videos.value
+                    val idx = currentVideos.indexOfFirst { it.uriString == currentUri }
+                    if (idx >= 0 && idx + 1 < currentVideos.size) {
+                        val next = currentVideos[idx + 1]
                         abRepeatA = null
                         abRepeatB = null
                         currentUri = next.uriString
@@ -802,7 +812,7 @@ private fun VideoPlayerSurface(
             if (view.player !== exoPlayer) {
                 view.player = exoPlayer
             }
-            val appliedKey = Triple(captionStyle, subtitleFontSp, aspectMode)
+            val appliedKey = listOf(subtitleColorHex, subtitleBgAlpha, subtitleFontSp, aspectMode)
             if (view.tag != appliedKey) {
                 view.subtitleView?.setStyle(captionStyle)
                 view.subtitleView?.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, subtitleFontSp)
@@ -825,9 +835,12 @@ private fun VideoSeekBarRow(
     durationMs: Long
 ) {
     var posMs by remember { mutableLongStateOf(exoPlayer.currentPosition.coerceAtLeast(0L)) }
+    var isScrubbing by remember { mutableStateOf(false) }
     LaunchedEffect(exoPlayer) {
         while (true) {
-            posMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            if (!isScrubbing) {
+                posMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            }
             delay(350L)
         }
     }
@@ -836,9 +849,12 @@ private fun VideoSeekBarRow(
         Slider(
             value = if (durationMs > 0) (posMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
             onValueChange = {
-                val target = (it * durationMs).toLong()
-                posMs = target
-                exoPlayer.seekTo(target)
+                isScrubbing = true
+                posMs = (it * durationMs).toLong()
+            },
+            onValueChangeFinished = {
+                exoPlayer.seekTo(posMs)
+                isScrubbing = false
             },
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
         )

@@ -355,6 +355,7 @@
     <string name="set_allow_http">ক্লিয়ারটেক্সট HTTP অনুমতি দিন (অনিরাপদ)</string>
     <string name="set_request_timeout">রিকোয়েস্ট টাইমআউট: %1$d সে.</string>
     <string name="set_api_desc">ঐচ্ছিক অনুমোদিত HTTPS এক্সট্র্যাকশন এন্ডপয়েন্ট কনফিগার করুন। টোকেন অ্যান্ড্রয়েড কীস্টোর দিয়ে এনক্রিপ্ট করে সংরক্ষণ করা হয়।</string>
+    <string name="api_paths_hint">কোড ও APK লোকেশন: CustomApiConfig.kt (DEX: com.tkofficial.videodownloder.network.CustomApiConfig) অথবা assets/configuration/app_settings.json</string>
     <string name="set_api_endpoint">HTTPS এক্সট্র্যাক্টর এন্ডপয়েন্ট লিংক</string>
     <string name="set_api_key">Bearer API কী (ঐচ্ছিক)</string>
     <string name="set_api_save">এনক্রিপ্ট ও API সংরক্ষণ</string>

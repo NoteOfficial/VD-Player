@@ -605,6 +605,12 @@ fun SettingsCenterScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                stringResource(R.string.api_paths_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.tertiaryAccent
+                            )
                             apiTestResult?.let { res ->
                                 Spacer(Modifier.height(6.dp))
                                 Text(res.message, style = MaterialTheme.typography.labelSmall, color = chipColor)

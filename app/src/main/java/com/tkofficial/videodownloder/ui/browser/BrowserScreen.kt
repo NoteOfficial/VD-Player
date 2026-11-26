@@ -115,10 +115,13 @@ fun BrowserScreen(
     var addressText by remember(currentTab.id, currentTab.url) { mutableStateOf(currentTab.url) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var webCanGoBack by remember { mutableStateOf(false) }
-    val latestTabTitle by androidx.compose.runtime.rememberUpdatedState(currentTab.title)
-    val latestSnifferEnabled by androidx.compose.runtime.rememberUpdatedState(settings.browserMediaSnifferEnabled)
+    val latestTabId by androidx.compose.runtime.rememberUpdatedState(currentTab.id)
     val latestAllowHttp by androidx.compose.runtime.rememberUpdatedState(settings.allowCleartextHttp)
     val latestJsEnabled by androidx.compose.runtime.rememberUpdatedState(settings.browserJavaScriptEnabled)
+
+    LaunchedEffect(settings.browserMediaSnifferEnabled) {
+        viewModel.snifferEnabledSnapshot = settings.browserMediaSnifferEnabled
+    }
 
     BackHandler(enabled = webCanGoBack) {
         webViewRef?.goBack()
@@ -134,16 +137,28 @@ fun BrowserScreen(
 
     LaunchedEffect(currentTab.id) {
         val wv = webViewRef ?: return@LaunchedEffect
-        if (wv.url != currentTab.url) {
+        val restored = viewModel.restoreTabWebViewState(currentTab.id, wv)
+        if (!restored && wv.url != currentTab.url) {
             wv.loadUrl(currentTab.url)
         }
         webCanGoBack = wv.canGoBack()
     }
 
+    DisposableEffect(currentTab.id) {
+        onDispose {
+            webViewRef?.let { wv ->
+                viewModel.saveTabWebViewState(currentTab.id, wv)
+            }
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
-            webViewRef?.stopLoading()
-            webViewRef?.destroy()
+            webViewRef?.let { wv ->
+                viewModel.saveTabWebViewState(latestTabId, wv)
+                wv.stopLoading()
+                wv.destroy()
+            }
             webViewRef = null
         }
     }
@@ -344,7 +359,7 @@ fun BrowserScreen(
                                 viewModel.updateActiveTab(url = resolvedUrl, title = pageTitle, isLoading = false, progress = 100)
                                 viewModel.recordVisit(pageTitle, resolvedUrl)
 
-                                if (latestSnifferEnabled) {
+                                if (viewModel.snifferEnabledSnapshot) {
                                     view?.evaluateJavascript(
                                         """
                                         (function() {
@@ -372,26 +387,33 @@ fun BrowserScreen(
                             }
 
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                val reqUrl = request?.url?.toString().orEmpty()
-                                if (latestSnifferEnabled && reqUrl.isNotBlank()) {
-                                    val lower = reqUrl.lowercase().substringBefore('?')
-                                    val detectedMime = when {
-                                        lower.endsWith(".mp4") || lower.endsWith(".m4v") -> "video/mp4"
-                                        lower.endsWith(".webm") -> "video/webm"
-                                        lower.endsWith(".mp3") -> "audio/mpeg"
-                                        lower.endsWith(".m4a") -> "audio/mp4"
-                                        lower.endsWith(".ogg") -> "audio/ogg"
-                                        else -> null
-                                    }
-                                    if (detectedMime != null) {
-                                        viewModel.onMediaUrlSniffed(reqUrl, detectedMime, latestTabTitle)
+                                if (viewModel.snifferEnabledSnapshot) {
+                                    val reqUrl = request?.url?.toString()
+                                    if (!reqUrl.isNullOrBlank()) {
+                                        val qIdx = reqUrl.indexOf('?')
+                                        val cleanEnd = if (qIdx >= 0) qIdx else reqUrl.length
+                                        val detectedMime = when {
+                                            reqUrl.regionMatches(cleanEnd - 4, ".mp4", 0, 4, ignoreCase = true) ||
+                                                reqUrl.regionMatches(cleanEnd - 4, ".m4v", 0, 4, ignoreCase = true) -> "video/mp4"
+                                            reqUrl.regionMatches(cleanEnd - 5, ".webm", 0, 5, ignoreCase = true) -> "video/webm"
+                                            reqUrl.regionMatches(cleanEnd - 4, ".mp3", 0, 4, ignoreCase = true) -> "audio/mpeg"
+                                            reqUrl.regionMatches(cleanEnd - 4, ".m4a", 0, 4, ignoreCase = true) -> "audio/mp4"
+                                            reqUrl.regionMatches(cleanEnd - 4, ".ogg", 0, 4, ignoreCase = true) -> "audio/ogg"
+                                            else -> null
+                                        }
+                                        if (detectedMime != null) {
+                                            viewModel.onMediaUrlSniffed(reqUrl, detectedMime, viewModel.activeTabTitleSnapshot)
+                                        }
                                     }
                                 }
                                 return super.shouldInterceptRequest(view, request)
                             }
                         }
 
-                        loadUrl(currentTab.url)
+                        val restored = viewModel.restoreTabWebViewState(currentTab.id, this)
+                        if (!restored) {
+                            loadUrl(currentTab.url)
+                        }
                         webViewRef = this
                     }
                 },

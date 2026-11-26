@@ -498,7 +498,7 @@ class DownloadManagerEngine(
                             }
 
                             val now = System.currentTimeMillis()
-                            if (now - lastUiUpdateMs >= 550L && downloadedSoFar > lastDbBytes) {
+                            if (now - lastUiUpdateMs >= 750L && downloadedSoFar > lastDbBytes) {
                                 val elapsedSec = ((now - lastUiUpdateMs).coerceAtLeast(1L)) / 1000.0
                                 val speed = (bytesInWindow / elapsedSec).toLong()
                                 val eta = if (totalBytes > downloadedSoFar && speed > 0L) {
@@ -515,7 +515,7 @@ class DownloadManagerEngine(
                                 )
                                 lastDbBytes = downloadedSoFar
 
-                                if (latestSettings.notifyActiveDownloads && (now - lastNotifUpdateMs >= 900L)) {
+                                if (latestSettings.notifyActiveDownloads && (now - lastNotifUpdateMs >= 1100L)) {
                                     notificationHelper.notifyDownloadProgress(
                                         entity.copy(
                                             status = "DOWNLOADING",

@@ -168,6 +168,21 @@ class PreferencesRepository(private val context: Context) {
         val LOCKOUT_UNTIL = longPreferencesKey("sec_lockout_until")
     }
 
+    @Volatile
+    private var cachedThemeRaw: String? = null
+
+    @Volatile
+    private var cachedThemeConfig: ThemeConfig = ThemeConfig()
+
+    private fun decodeThemeConfig(rawJson: String?): ThemeConfig {
+        if (rawJson.isNullOrBlank()) return ThemeConfig()
+        if (rawJson == cachedThemeRaw) return cachedThemeConfig
+        val decoded = runCatching { json.decodeFromString<ThemeConfig>(rawJson) }.getOrNull() ?: ThemeConfig()
+        cachedThemeRaw = rawJson
+        cachedThemeConfig = decoded
+        return decoded
+    }
+
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         val langTag = prefs[Keys.LANGUAGE] ?: AppLanguage.ENGLISH.tag
         val lang = AppLanguage.entries.firstOrNull { it.tag == langTag } ?: AppLanguage.ENGLISH
@@ -177,9 +192,7 @@ class PreferencesRepository(private val context: Context) {
         val decoder = runCatching {
             DecoderMode.valueOf(prefs[Keys.VIDEO_DECODER] ?: DecoderMode.AUTO.name)
         }.getOrDefault(DecoderMode.AUTO)
-        val theme = runCatching {
-            prefs[Keys.THEME_CONFIG]?.let { json.decodeFromString<ThemeConfig>(it) }
-        }.getOrNull() ?: ThemeConfig()
+        val theme = decodeThemeConfig(prefs[Keys.THEME_CONFIG])
 
         AppSettings(
             userDisplayName = prefs[Keys.USER_NAME] ?: "Media Explorer",

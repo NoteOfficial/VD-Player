@@ -168,9 +168,9 @@ import com.tkofficial.videodownloder.ui.settings.SettingsCenterScreen
 import com.tkofficial.videodownloder.ui.themes.DownloaderVaTheme
 import com.tkofficial.videodownloder.ui.themes.LocalVaTokens
 import com.tkofficial.videodownloder.ui.themes.ThemeStudioScreen
+import androidx.navigation.NavHostController
 import com.tkofficial.videodownloder.ui.vault.SecurityCenterScreen
 import com.tkofficial.videodownloder.ui.vault.VaultScreen
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -247,7 +247,6 @@ class MainActivity : AppCompatActivity() {
             // Dismiss splash as soon as persisted settings/language/theme load from DataStore
             LaunchedEffect(isSettingsLoaded) {
                 if (isSettingsLoaded) {
-                    delay(80L)
                     showSplash = false
                 }
             }
@@ -257,7 +256,7 @@ class MainActivity : AppCompatActivity() {
             val localizedConfig = remember(baseConfig, settings.language) {
                 LocaleHelper.buildLocalizedConfiguration(baseConfig, settings.language)
             }
-            val localizedContext = remember(baseContext, settings.language, baseConfig) {
+            val localizedContext = remember(baseContext, settings.language) {
                 LocaleHelper.wrapContext(baseContext, settings.language)
             }
             val layoutDirection = if (settings.language == AppLanguage.ARABIC) {
@@ -280,8 +279,6 @@ class MainActivity : AppCompatActivity() {
                 val tokens = LocalVaTokens.current
                 val navController = rememberNavController()
                 val snackbarHostState = remember { SnackbarHostState() }
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDest = navBackStackEntry?.destination
 
                 val startRoute: AppRoute = remember(settings.startDestination) {
                     when (settings.startDestination.lowercase()) {
@@ -293,16 +290,17 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Track whether VideoPlaybackRoute is active for PiP and connect MediaController lazily
-                val onVideoRoute = currentDest?.hasRoute(VideoPlaybackRoute::class) == true
-                val onPlayerOrVideo = currentDest?.hasRoute(PlayerRoute::class) == true || onVideoRoute
-                LaunchedEffect(onVideoRoute) {
-                    isOnVideoPlayerRoute = onVideoRoute
-                }
-                LaunchedEffect(onPlayerOrVideo) {
-                    if (onPlayerOrVideo) {
-                        playerViewModel.ensureControllerConnected()
+                // Track destination changes via listener without recomposing NavHost
+                DisposableEffect(navController, playerViewModel) {
+                    val listener = androidx.navigation.NavController.OnDestinationChangedListener { _, destination, _ ->
+                        val onVideoRoute = destination.hasRoute(VideoPlaybackRoute::class)
+                        isOnVideoPlayerRoute = onVideoRoute
+                        if (onVideoRoute || destination.hasRoute(PlayerRoute::class)) {
+                            playerViewModel.ensureControllerConnected()
+                        }
                     }
+                    navController.addOnDestinationChangedListener(listener)
+                    onDispose { navController.removeOnDestinationChangedListener(listener) }
                 }
 
                 // Handle Share-Intent URL or Notification tap
@@ -357,15 +355,6 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
 
-                val showPrimaryNav = !isInPipModeState.value && (
-                    currentDest == null ||
-                        currentDest.hasRoute(HomeRoute::class) ||
-                        currentDest.hasRoute(GalleryRoute::class) ||
-                        currentDest.hasRoute(PlayerRoute::class) ||
-                        currentDest.hasRoute(BrowserRoute::class) ||
-                        currentDest.hasRoute(ProfileRoute::class)
-                    )
-
                 fun navigateToTopTab(route: AppRoute) {
                     navController.navigate(route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -375,50 +364,14 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 Box(modifier = Modifier.fillMaxSize().background(tokens.background)) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val useRail = maxWidth >= 600.dp && showPrimaryNav
-
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            if (useRail) {
-                                VaNavigationRail(
-                                    tabs = tabs,
-                                    isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
-                                    onSelect = ::navigateToTopTab
-                                )
-                            }
-
-                            val allowGlobalMiniBar = !isInPipModeState.value &&
-                                currentDest?.hasRoute(PlayerRoute::class) != true &&
-                                currentDest?.hasRoute(VideoPlaybackRoute::class) != true
-
-                            Scaffold(
-                                containerColor = tokens.background,
-                                snackbarHost = { SnackbarHost(snackbarHostState) },
-                                contentWindowInsets = if (onVideoRoute) {
-                                    WindowInsets(0)
-                                } else {
-                                    WindowInsets.safeDrawing.only(
-                                        WindowInsetsSides.Horizontal + WindowInsetsSides.Top + WindowInsetsSides.Bottom
-                                    )
-                                },
-                                bottomBar = {
-                                    Column {
-                                        if (allowGlobalMiniBar) {
-                                            GlobalMiniMusicBarHost(
-                                                playerViewModel = playerViewModel,
-                                                onOpenPlayer = { navigateToTopTab(PlayerRoute) }
-                                            )
-                                        }
-                                        if (showPrimaryNav && !useRail) {
-                                            VaBottomBar(
-                                                tabs = tabs,
-                                                isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
-                                                onSelect = ::navigateToTopTab
-                                            )
-                                        }
-                                    }
-                                }
-                            ) { innerPadding ->
+                    MainNavigationChromeScaffold(
+                        navController = navController,
+                        playerViewModel = playerViewModel,
+                        snackbarHostState = snackbarHostState,
+                        tabs = tabs,
+                        isInPipMode = isInPipModeState.value,
+                        onNavigateToTab = ::navigateToTopTab
+                    ) { innerPadding ->
                                 val navAnimMs = if (tokens.reduceMotion) 0 else tokens.animDurationMs.coerceIn(140, 300)
                                 if (isSettingsLoaded) {
                                 NavHost(
@@ -612,8 +565,6 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 }
                                 }
-                            }
-                        }
                     }
 
                     // Global App Lock Gate (when enabled by user in Security / Settings)
@@ -638,7 +589,7 @@ class MainActivity : AppCompatActivity() {
                     AnimatedVisibility(
                         visible = showSplash,
                         enter = fadeIn(tween(150)),
-                        exit = fadeOut(tween(if (tokens.reduceMotion) 0 else 280))
+                        exit = fadeOut(tween(if (tokens.reduceMotion) 0 else 150))
                     ) {
                         Box(
                             modifier = Modifier
@@ -749,6 +700,77 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButtonText(LocaleHelper.getLocalizedString(this, language, R.string.btn_cancel))
             .build()
         prompt.authenticate(info)
+    }
+}
+
+@Composable
+private fun MainNavigationChromeScaffold(
+    navController: NavHostController,
+    playerViewModel: PlayerViewModel,
+    snackbarHostState: SnackbarHostState,
+    tabs: List<TopLevelTab>,
+    isInPipMode: Boolean,
+    onNavigateToTab: (AppRoute) -> Unit,
+    content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit
+) {
+    val tokens = LocalVaTokens.current
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDest = navBackStackEntry?.destination
+    val onVideoRoute = currentDest?.hasRoute(VideoPlaybackRoute::class) == true
+    val showPrimaryNav = !isInPipMode && (
+        currentDest == null ||
+            currentDest.hasRoute(HomeRoute::class) ||
+            currentDest.hasRoute(GalleryRoute::class) ||
+            currentDest.hasRoute(PlayerRoute::class) ||
+            currentDest.hasRoute(BrowserRoute::class) ||
+            currentDest.hasRoute(ProfileRoute::class)
+        )
+    val allowGlobalMiniBar = !isInPipMode &&
+        currentDest?.hasRoute(PlayerRoute::class) != true &&
+        !onVideoRoute
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useRail = maxWidth >= 600.dp && showPrimaryNav
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (useRail) {
+                VaNavigationRail(
+                    tabs = tabs,
+                    isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
+                    onSelect = onNavigateToTab
+                )
+            }
+
+            Scaffold(
+                containerColor = tokens.background,
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                contentWindowInsets = if (onVideoRoute) {
+                    WindowInsets(0)
+                } else {
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Horizontal + WindowInsetsSides.Top + WindowInsetsSides.Bottom
+                    )
+                },
+                bottomBar = {
+                    Column {
+                        if (allowGlobalMiniBar) {
+                            GlobalMiniMusicBarHost(
+                                playerViewModel = playerViewModel,
+                                onOpenPlayer = { onNavigateToTab(PlayerRoute) }
+                            )
+                        }
+                        if (showPrimaryNav && !useRail) {
+                            VaBottomBar(
+                                tabs = tabs,
+                                isSelected = { tab -> currentDest?.hasRoute(tab.route::class) == true },
+                                onSelect = onNavigateToTab
+                            )
+                        }
+                    }
+                },
+                content = content
+            )
+        }
     }
 }
 
