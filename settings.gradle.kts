@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "VD Player"
+rootProject.name = "TK Studio"
 
 include(":app")

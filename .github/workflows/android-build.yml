@@ -1,0 +1,131 @@
+name: Android Build
+
+# Every push / PR / manual run builds the app automatically.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # needed only to attach APKs to a GitHub Release on v* tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # compileSdk = 36 with minorApiLevel = 1 means the "Android SDK Platform 36.1" package.
+      - name: Install SDK packages (API 36.1 + build-tools 36.0.0)
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "build-tools;36.0.0" "platforms;android-36"
+          sdkmanager "platforms;android-36.1" || echo "platforms;android-36.1 not listed - AGP will try to download it"
+
+      # The project ships without gradlew / gradle-wrapper.jar, so use the exact
+      # Gradle version from gradle/wrapper/gradle-wrapper.properties (9.3.1).
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+
+      # debug.keystore is git-ignored but build.gradle.kts references it
+      # (alias androiddebugkey / password android), so create it on the runner.
+      - name: Create debug keystore
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TK-Studio-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ---- Optional signed release build -------------------------------
+      # Runs only if you add these repository secrets:
+      #   KEYSTORE_BASE64  (base64 of my-upload-key.jks)
+      #   STORE_PASSWORD, KEY_PASSWORD     (key alias must be "upload")
+      - name: Check release secrets
+        id: rel
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
+          SP: ${{ secrets.STORE_PASSWORD }}
+          KP: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS" ] && [ -n "$SP" ] && [ -n "$KP" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release secrets not set - skipping signed release build."
+          fi
+
+      - name: Build signed release APK
+        if: steps.rel.outputs.enabled == 'true'
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/my-upload-key.jks"
+          export KEYSTORE_PATH="$RUNNER_TEMP/my-upload-key.jks"
+          gradle assembleRelease --stacktrace --no-daemon
+          rm -f "$RUNNER_TEMP/my-upload-key.jks"
+
+      - name: Upload release APK
+        if: steps.rel.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TK-Studio-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APKs to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+          fail_on_unmatched_files: false
+
+      - name: Upload build reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            app/build/reports
+            **/build/reports/**
+          if-no-files-found: ignore
