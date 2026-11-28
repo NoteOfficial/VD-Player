@@ -62,7 +62,8 @@ jobs:
           fi
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace --no-daemon
+        shell: bash
+        run: gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build-debug.log
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -126,6 +127,6 @@ jobs:
         with:
           name: build-reports
           path: |
+            build-debug.log
             app/build/reports
-            **/build/reports/**
           if-no-files-found: ignore
